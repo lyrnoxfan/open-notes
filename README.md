@@ -2,8 +2,8 @@
 
 本地优先的 Android 私密笔记应用。所有内容存放在一台设备上，数据库从创建第一页起就是 SQLCipher 密文。
 
-当前进度：**阶段一、二、四已实现**（工程基础与安全存储、笔记功能、应用锁与隐私），代码已提交，
-按方案第 11 节的验收结果见文末「验证结果」。阶段三（Markdown、标签、搜索）尚未开始。
+当前进度：**阶段一至阶段四已实现**（工程基础与安全存储、笔记功能、Markdown/标签/搜索、应用锁与
+隐私）。阶段五、六（备份恢复、WebDAV）与阶段七（发布）尚未合入。验收状态见文末「验证结果」。
 
 ## 技术栈
 
@@ -77,12 +77,28 @@ flowchart LR
 app/src/main/java/com/example/privatenotes/
 ├── security/         Keystore 包裹、密钥管理、明文库防护、应用锁、FLAG_SECURE
 ├── data/local/       AppDatabase、实体、DAO、加密开库入口、migrations
-├── data/repository/  NoteRepository、TimeSource、LIKE 转义
-├── feature/notes/    笔记列表、编辑器（1 秒防抖自动保存）
+├── data/repository/  NoteRepository、TagRepository、TimeSource、LIKE 转义
+├── feature/notes/    列表（搜索 + 标签筛选）、编辑器（自动保存、预览、标签）
 ├── feature/trash/    回收站、恢复、永久删除
 ├── feature/lock/     锁屏界面、应用锁开关
+├── ui/markdown/      单换行规则、Markwon 渲染
+├── ui/components/    标签标签行、标签筛选行
 ├── ui/               AppRoot（锁门）、navigation、theme（暖纸配色）
 ```
+
+## Markdown、标签与搜索
+
+1. **单换行就是换行。** `MarkdownLineBreaks` 在渲染前显式给「下一行还有正文」的行补 CommonMark
+   硬换行，跳过围栏代码块、空行和已有换行。不依赖渲染器默认行为（§7.2）。
+2. **预览不碰原文。** 编辑器存的始终是 Markdown 源文本，预览只是渲染结果；切换视图共用
+   ViewModel 里同一个字符串，光标由界面持有，所以不丢内容也不丢未提交输入。
+3. **只做必要语法。** Markwon + CommonMark，覆盖标题、列表、引用、代码块、链接、分隔线，
+   不引入网页渲染环境。
+4. **标签按稳定 ID 关联。** 名字大小写不敏感比较，「Work」与「work」归一为同一个标签；改名撞上
+   已有名字时在事务里合并两个标签并保留笔记关联。
+5. **一条语句服务三种用法。** 列表、搜索、标签筛选共用同一条参数化查询：关键词包含式匹配标题或
+   正文，标签用 EXISTS 子查询（多标签笔记不会重复出现），两者可组合；用户输入里的 `%` `_` `\`
+   先转义再绑定，不拼接 SQL。
 
 ## 数据模型（schema v1）
 
@@ -103,7 +119,7 @@ destructive fallback。
 
 ```bash
 ./gradlew assembleDebug               # 构建
-./gradlew testDebugUnitTest           # 主机端：密钥、明文防护、DAO、自动保存、应用锁状态机
+./gradlew testDebugUnitTest           # 主机端：密钥、DAO、自动保存、标签、Markdown 规则、应用锁
 ./gradlew connectedDebugAndroidTest   # 设备端：真 SQLCipher、真 Keystore、锁屏与 FLAG_SECURE
 ```
 
@@ -115,14 +131,20 @@ destructive fallback。
 阶段一、二（历史记录）：主机端与设备端测试全部通过；API 34 模拟器上确认数据库首字节为随机盐，
 主库与 `-wal` 中搜不到 `SQLite format 3`。
 
-阶段四：**待运行**（按项目约定，构建与测试将在机器空闲时执行，结果随后补入本节）。需要覆盖的项：
+阶段二、三（主机端）：107 个测试全部通过——自动保存管线（防抖、旧保存不覆盖新内容、失败状态、
+离开时补写）、仓储事务（永久删除与墓碑同事务、30 天清理）、标签 CRUD 与合并、标签+关键词组合、
+单换行规则、预览切换。
 
-- 主机端：`AppLockManagerTest`（冷启动锁定、30 秒边界、系统界面豁免、开关行为）、
-  `AppLockSettingsTest`（开关持久化）。
-- 设备端：`AppLockIntegrationTest`（FLAG_SECURE、真实 `ProcessLifecycleOwner` 下的 30 秒超时、
-  锁定后不组合笔记列表、关库后仍能读回笔记）、`AppLockGateTest`（锁屏界面与认证结果分支）。
-- 手工：开启应用锁后按 Home 停留 31 秒返回 → 出现锁屏；停留 5 秒返回 → 不出现锁屏；截图与最近
-  任务预览为空白。
+阶段四（主机端）：`AppLockManagerTest`（冷启动锁定、30 秒边界、系统界面豁免、开关行为）与
+`AppLockSettingsTest`（开关持久化）已通过，共 15 个测试。
+
+阶段四（设备端）：**待运行**。`AppLockIntegrationTest`（FLAG_SECURE、真实
+`ProcessLifecycleOwner` 下的 30 秒超时、锁定后不组合笔记列表、关库后仍能读回笔记）与
+`AppLockGateTest`（锁屏界面与认证结果分支）已随阶段三测试一起构建通过，但按约定在所有分支合完后
+统一执行。
+
+手工项（待做）：开启应用锁后按 Home 停留 31 秒返回 → 出现锁屏；停留 5 秒返回 → 不出现锁屏；
+截图与最近任务预览为空白。
 
 ## 已知限制
 
@@ -133,4 +155,6 @@ destructive fallback。
 - 设备凭据被删除后，应用锁会停在「先设置锁屏密码」页面：按方案 §6.2 不做绕过，需要重新设置凭据
   才能进入。这是有意的取舍，避免把「删除锁屏密码」变成绕过应用锁的方法。
 - 应用锁开关目前在笔记列表的更多菜单里；完整设置页属于阶段六，届时迁移过去。
-- 阶段三的 Markdown、标签与搜索尚未实现，列表与编辑器里没有对应的假入口。
+- 笔记列表的标签筛选使用全部标签，暂不支持重命名/删除标签的界面入口；`TagRepository` 已具备这些
+  能力，界面留待设置页（阶段六）一并提供。
+- 搜索为包含式匹配，不做分词（§7.3 明确 v1 不引入中文分词）。
