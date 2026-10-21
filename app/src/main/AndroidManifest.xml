@@ -4,6 +4,8 @@
     <!-- §6.2: the app lock authenticates through BiometricPrompt with a device-credential
          fallback; both paths need this permission. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- WebDAV backups only ever use HTTPS (§9.3). -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".PrivateNotesApp"

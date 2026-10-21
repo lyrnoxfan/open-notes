@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.example.privatenotes.security.SecureWindow
+import kotlinx.coroutines.launch
 import com.example.privatenotes.ui.AppRoot
 import com.example.privatenotes.ui.theme.PrivateNotesTheme
 
@@ -14,6 +15,8 @@ import com.example.privatenotes.ui.theme.PrivateNotesTheme
  */
 class MainActivity : FragmentActivity() {
 
+    private lateinit var container: AppContainer
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -22,12 +25,21 @@ class MainActivity : FragmentActivity() {
         // first frame so no window is ever unsecure, including the lock screen itself.
         SecureWindow.apply(this)
 
-        val container = (application as PrivateNotesApp).container
+        container = (application as PrivateNotesApp).container
 
         setContent {
             PrivateNotesTheme {
                 AppRoot(container = container)
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Returning to the foreground is the reliable moment to catch up; Android owes the app
+        // no execution time at exit (§9.4).
+        container.applicationScope.launch {
+            runCatching { container.backupScheduler.onAppForeground() }
         }
     }
 }

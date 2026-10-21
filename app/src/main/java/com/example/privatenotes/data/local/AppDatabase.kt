@@ -25,6 +25,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun deletionMarkerDao(): DeletionMarkerDao
 
+    /** Full-table access reserved for backup export and merge import. */
+    abstract fun backupDao(): BackupDao
+
     companion object {
         const val NAME = "private_notes.db"
 

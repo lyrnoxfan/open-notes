@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,6 +74,7 @@ fun NoteListScreen(
     onCreateNote: () -> Unit,
     onOpenNote: (String) -> Unit,
     onOpenTrash: () -> Unit,
+    onOpenSettings: () -> Unit,
     appLock: AppLock,
     authenticator: AppLockAuthenticator,
     modifier: Modifier = Modifier,
@@ -100,6 +102,15 @@ fun NoteListScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.testTag(NoteListTags.SETTINGS),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = stringResource(R.string.note_list_settings),
+                        )
+                    }
                     IconButton(onClick = onOpenTrash, modifier = Modifier.testTag(NoteListTags.TRASH)) {
                         Icon(
                             imageVector = Icons.Outlined.DeleteSweep,
@@ -388,6 +399,7 @@ object NoteListTags {
     const val TRASH = "note_list_trash"
     const val SEARCH = "note_list_search"
     const val MORE = "note_list_more"
+    const val SETTINGS = "note_list_settings"
 }
 
 /** Excerpt without Markdown punctuation, so the list reads as text rather than source (§4.3). */

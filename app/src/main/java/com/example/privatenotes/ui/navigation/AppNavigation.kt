@@ -8,6 +8,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.privatenotes.AppContainer
+import com.example.privatenotes.feature.backup.BackupSettingsScreen
+import com.example.privatenotes.feature.backup.BackupSettingsViewModel
 import com.example.privatenotes.feature.notes.NoteEditorScreen
 import com.example.privatenotes.feature.notes.NoteEditorViewModel
 import com.example.privatenotes.feature.notes.NoteListScreen
@@ -18,6 +20,7 @@ import com.example.privatenotes.feature.trash.TrashViewModel
 object Routes {
     const val NOTES = "notes"
     const val TRASH = "trash"
+    const val BACKUP = "backup"
     const val EDITOR = "editor"
     const val ARG_NOTE_ID = "noteId"
 
@@ -43,6 +46,7 @@ fun AppNavigation(container: AppContainer) {
                 onCreateNote = { navController.navigate(Routes.editor()) },
                 onOpenNote = { noteId -> navController.navigate(Routes.editor(noteId)) },
                 onOpenTrash = { navController.navigate(Routes.TRASH) },
+                onOpenSettings = { navController.navigate(Routes.BACKUP) },
                 appLock = container.appLock,
                 authenticator = container.appLockAuthenticator,
             )
@@ -70,6 +74,16 @@ fun AppNavigation(container: AppContainer) {
             )
             NoteEditorScreen(
                 viewModel = editorViewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.BACKUP) {
+            val backupViewModel: BackupSettingsViewModel = viewModel(
+                factory = BackupSettingsViewModel.factory(container),
+            )
+            BackupSettingsScreen(
+                viewModel = backupViewModel,
                 onBack = { navController.popBackStack() },
             )
         }

@@ -1,6 +1,7 @@
 package com.example.privatenotes
 
 import android.app.Application
+import kotlinx.coroutines.launch
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -21,6 +22,11 @@ class PrivateNotesApp : Application() {
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
                     container.appLock.onForeground()
+                    // §9.4: a launch is also a chance to notice that yesterday's backup never
+                    // ran. Idempotent, and does nothing until a destination is configured.
+                    container.applicationScope.launch {
+                        runCatching { container.backupScheduler.onAppForeground() }
+                    }
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
