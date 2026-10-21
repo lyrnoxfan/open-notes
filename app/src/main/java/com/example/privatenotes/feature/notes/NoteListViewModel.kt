@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class NoteListUiState(
     val notes: List<NoteEntity> = emptyList(),
@@ -50,6 +51,10 @@ class NoteListViewModel(
             started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
             initialValue = NoteListUiState(),
         )
+
+    fun deleteNote(noteId: String) {
+        viewModelScope.launch { runCatching { repositoryProvider().moveToTrash(noteId) } }
+    }
 
     companion object {
         private const val STOP_TIMEOUT_MS = 5_000L

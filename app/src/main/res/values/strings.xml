@@ -2,8 +2,39 @@
 <resources>
     <string name="app_name">私密笔记</string>
     <string name="note_untitled">无标题</string>
+
+    <!-- 列表 -->
     <string name="note_list_empty_title">还没有笔记</string>
     <string name="note_list_empty_body">写下的一切都存在本机加密数据库里。</string>
     <string name="note_list_error_title">无法打开加密数据库</string>
     <string name="note_list_error_hint">原有数据没有被删除或重建。请通过备份恢复。</string>
+    <string name="note_list_new">新建笔记</string>
+    <string name="note_list_trash">回收站</string>
+    <string name="note_list_delete">删除</string>
+
+    <!-- 编辑 -->
+    <string name="editor_title_hint">标题</string>
+    <string name="editor_content_hint">开始写…</string>
+    <string name="editor_back">返回</string>
+    <string name="editor_more">更多</string>
+    <string name="editor_delete">删除这篇笔记</string>
+    <string name="editor_status_pending">未保存</string>
+    <string name="editor_status_saving">保存中…</string>
+    <string name="editor_status_saved">已保存</string>
+    <string name="editor_status_failed">保存失败：%1$s</string>
+
+    <!-- 回收站 -->
+    <string name="trash_title">回收站</string>
+    <string name="trash_back">返回</string>
+    <string name="trash_empty_title">回收站是空的</string>
+    <string name="trash_empty_body">删除的笔记会在这里保留 30 天。</string>
+    <string name="trash_restore">恢复</string>
+    <string name="trash_delete_forever">永久删除</string>
+    <string name="trash_remaining_days">剩余 %1$d 天</string>
+    <string name="trash_cleanup_today">今天清理</string>
+    <string name="trash_deleted_at">删除于 %1$s</string>
+    <string name="trash_confirm_title">永久删除这篇笔记？</string>
+    <string name="trash_confirm_body">正文会被清除，且无法恢复。仍可通过备份找回。</string>
+    <string name="trash_confirm_action">永久删除</string>
+    <string name="trash_cancel">取消</string>
 </resources>
