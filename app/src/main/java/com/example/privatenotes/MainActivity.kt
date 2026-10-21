@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import com.example.privatenotes.security.AppLockState
 import com.example.privatenotes.security.SecureWindow
 import kotlinx.coroutines.launch
 import com.example.privatenotes.ui.AppRoot
@@ -39,7 +40,10 @@ class MainActivity : FragmentActivity() {
         // Returning to the foreground is the reliable moment to catch up; Android owes the app
         // no execution time at exit (§9.4).
         container.applicationScope.launch {
-            runCatching { container.backupScheduler.onAppForeground() }
+            // The lock may be showing; a backup run must not reopen the database behind it.
+            if (container.appLock.state.value == AppLockState.Unlocked) {
+                runCatching { container.backupScheduler.onAppForeground() }
+            }
         }
     }
 }

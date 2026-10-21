@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.example.privatenotes.security.AppLockState
 
 class PrivateNotesApp : Application() {
 
@@ -25,7 +26,11 @@ class PrivateNotesApp : Application() {
                     // §9.4: a launch is also a chance to notice that yesterday's backup never
                     // ran. Idempotent, and does nothing until a destination is configured.
                     container.applicationScope.launch {
-                        runCatching { container.backupScheduler.onAppForeground() }
+                        // Enqueueing is free, but a worker would open the database; only ask for
+                        // the catch-up when the lock is satisfied.
+                        if (container.appLock.state.value == AppLockState.Unlocked) {
+                            runCatching { container.backupScheduler.onAppForeground() }
+                        }
                     }
                 }
 

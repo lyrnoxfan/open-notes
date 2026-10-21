@@ -60,17 +60,29 @@ data class BackupSnapshot(
  * at each other.
  */
 class BackupSnapshotReader(
-    private val database: AppDatabase,
+    /**
+     * A provider, not an instance: constructing this object must never open the database.
+     * The backup scheduler is touched on every foreground start, and §6.2 closes the database
+     * when the app locks - a service that opened it merely by being constructed would reconnect
+     * behind the lock screen.
+     */
+    private val databaseProvider: () -> AppDatabase,
     private val timeSource: TimeSource,
 ) {
-    suspend fun read(appVersion: String): BackupDocument = database.withTransaction {
-        val dao = database.backupDao()
-        val snapshot = BackupSnapshot(
-            notes = dao.allNotes(),
-            tags = dao.allTags(),
-            noteTags = dao.allNoteTags(),
-            deletionMarkers = dao.allDeletionMarkers(),
-        )
-        snapshot.toDocument(exportedAt = timeSource.nowMillis(), appVersion = appVersion)
+
+    constructor(database: AppDatabase, timeSource: TimeSource) : this({ database }, timeSource)
+
+    suspend fun read(appVersion: String): BackupDocument {
+        val database = databaseProvider()
+        return database.withTransaction {
+            val dao = database.backupDao()
+            val snapshot = BackupSnapshot(
+                notes = dao.allNotes(),
+                tags = dao.allTags(),
+                noteTags = dao.allNoteTags(),
+                deletionMarkers = dao.allDeletionMarkers(),
+            )
+            snapshot.toDocument(exportedAt = timeSource.nowMillis(), appVersion = appVersion)
+        }
     }
 }

@@ -52,12 +52,16 @@ data class MergeConflict(
  * there is no half-merged state where some notes were restored and the rest were not.
  */
 class BackupMerger(
-    private val database: AppDatabase,
+    /** A provider for the same reason as [BackupSnapshotReader]: no connection at construction. */
+    private val databaseProvider: () -> AppDatabase,
     private val json: BackupJson,
 ) {
 
+    constructor(database: AppDatabase, json: BackupJson) : this({ database }, json)
+
     suspend fun merge(backup: BackupDocument): MergeReport {
         json.validate(backup)
+        val database = databaseProvider()
         return database.withTransaction {
             val dao = database.backupDao()
             val plan = MergePlanner.plan(

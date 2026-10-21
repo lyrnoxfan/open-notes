@@ -129,14 +129,16 @@ class AppContainer(context: Context) {
     val backupStatusStore: BackupStatusStore by lazy { BackupStatusStore(appContext) }
 
     private val backupSnapshotReader: BackupSnapshotReader by lazy {
-        BackupSnapshotReader(database, timeSource)
+        // Provider, so constructing the backup services on a foreground start does not open the
+        // database that §6.2 just closed for the lock screen.
+        BackupSnapshotReader({ database }, timeSource)
     }
 
     private val backupArchiveService: BackupArchiveService by lazy {
         BackupArchiveService(backupSnapshotReader, backupJson, appVersionProvider)
     }
 
-    private val backupMerger: BackupMerger by lazy { BackupMerger(database, backupJson) }
+    private val backupMerger: BackupMerger by lazy { BackupMerger({ database }, backupJson) }
 
     private val safBackupDirectory: SafBackupDirectory by lazy {
         SafBackupDirectory(appContext, backupStatusStore)

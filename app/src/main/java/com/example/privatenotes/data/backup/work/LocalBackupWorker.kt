@@ -7,6 +7,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.example.privatenotes.PrivateNotesApp
 import com.example.privatenotes.data.backup.BackupException
+import com.example.privatenotes.security.AppLockState
 
 /** Daily local backup, or a one-off catch-up run (§9.2, §9.4). */
 class LocalBackupWorker(
@@ -17,6 +18,9 @@ class LocalBackupWorker(
     override suspend fun doWork(): Result {
         val container = (applicationContext as? PrivateNotesApp)?.container
             ?: return Result.failure()
+        // §6.2 keeps the database closed while the app is locked. A worker that opened it here
+        // would defeat that, so the run is skipped and picked up after the next unlock.
+        if (container.appLock.state.value == AppLockState.Locked) return Result.success()
         if (!container.localBackupManager.isConfigured()) {
             // Not configured is not a failure: the user may only use WebDAV or manual export.
             return Result.success()
