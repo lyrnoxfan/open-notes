@@ -15,7 +15,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -28,6 +32,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -37,6 +44,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.privatenotes.R
 import com.example.privatenotes.data.local.NoteEntity
+import com.example.privatenotes.feature.lock.LockSettingsDialog
+import com.example.privatenotes.security.AppLock
+import com.example.privatenotes.security.AppLockAuthenticator
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -55,9 +65,13 @@ fun NoteListScreen(
     onCreateNote: () -> Unit,
     onOpenNote: (String) -> Unit,
     onOpenTrash: () -> Unit,
+    appLock: AppLock,
+    authenticator: AppLockAuthenticator,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var menuOpen by remember { mutableStateOf(false) }
+    var lockSettingsOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier,
@@ -75,6 +89,36 @@ fun NoteListScreen(
                             imageVector = Icons.Outlined.DeleteSweep,
                             contentDescription = stringResource(R.string.note_list_trash),
                         )
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { menuOpen = true },
+                            modifier = Modifier.testTag(NoteListTags.MORE),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.MoreVert,
+                                contentDescription = stringResource(R.string.note_list_more),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false },
+                            containerColor = MaterialTheme.colorScheme.surface,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.app_lock_settings)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Lock,
+                                        contentDescription = null,
+                                    )
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    lockSettingsOpen = true
+                                },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -131,6 +175,16 @@ fun NoteListScreen(
             }
         }
     }
+
+    // §6.2: the user can turn the app lock on or off. It sits here until the settings screen
+    // arrives in phase 6, rather than being a dead switch with no way to reach it.
+    if (lockSettingsOpen) {
+        LockSettingsDialog(
+            lock = appLock,
+            authenticator = authenticator,
+            onDismiss = { lockSettingsOpen = false },
+        )
+    }
 }
 
 @Composable
@@ -181,6 +235,7 @@ private fun NoteRow(note: NoteEntity, onClick: () -> Unit, onDelete: () -> Unit)
 object NoteListTags {
     const val CREATE = "note_list_create"
     const val TRASH = "note_list_trash"
+    const val MORE = "note_list_more"
 }
 
 @Composable

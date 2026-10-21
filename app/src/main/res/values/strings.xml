@@ -37,4 +37,31 @@
     <string name="trash_confirm_body">正文会被清除，且无法恢复。仍可通过备份找回。</string>
     <string name="trash_confirm_action">永久删除</string>
     <string name="trash_cancel">取消</string>
+
+    <!-- 应用锁（§6.2） -->
+    <string name="lock_title">应用已锁定</string>
+    <string name="lock_subtitle">验证后继续查看私人笔记。</string>
+    <string name="lock_unlock">解锁</string>
+    <string name="lock_retry">重试</string>
+    <string name="lock_cancelled">已取消验证，笔记仍处于锁定状态。</string>
+    <string name="lock_lockout">尝试次数过多，请稍后再试。</string>
+    <string name="lock_lockout_permanent">验证已被系统锁定，请使用设备密码。</string>
+    <string name="lock_no_biometrics">设备上没有可用的指纹，请使用设备密码。</string>
+    <string name="lock_hardware_unavailable">验证硬件暂时不可用，请重试。</string>
+    <string name="lock_generic_error">验证未通过，笔记仍处于锁定状态。</string>
+    <string name="lock_no_credential_title">先设置锁屏密码</string>
+    <string name="lock_no_credential_body">应用锁依赖系统的锁屏密码、图案或指纹。设置后回到应用即可解锁。</string>
+    <string name="lock_open_security_settings">打开安全设置</string>
+    <string name="lock_prompt_title">解锁私密笔记</string>
+    <string name="lock_prompt_subtitle">验证身份后查看笔记</string>
+    <string name="lock_prompt_description">使用指纹或设备密码</string>
+
+    <!-- 应用锁设置 -->
+    <string name="note_list_more">更多</string>
+    <string name="app_lock_settings">应用锁</string>
+    <string name="app_lock_settings_title">应用锁</string>
+    <string name="app_lock_settings_switch">开启应用锁</string>
+    <string name="app_lock_settings_summary">离开应用超过 30 秒后，重新进入需要指纹或设备密码。</string>
+    <string name="app_lock_settings_unavailable">设备未设置锁屏密码，无法开启应用锁。</string>
+    <string name="app_lock_settings_close">完成</string>
 </resources>

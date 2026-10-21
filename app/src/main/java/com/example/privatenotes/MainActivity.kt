@@ -1,23 +1,32 @@
 package com.example.privatenotes
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.example.privatenotes.ui.navigation.AppNavigation
+import androidx.fragment.app.FragmentActivity
+import com.example.privatenotes.security.SecureWindow
+import com.example.privatenotes.ui.AppRoot
 import com.example.privatenotes.ui.theme.PrivateNotesTheme
 
-class MainActivity : ComponentActivity() {
+/**
+ * FragmentActivity rather than ComponentActivity: `BiometricPrompt` is constructed against a
+ * FragmentActivity, and the app lock is not optional plumbing (§6.2).
+ */
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        // §6.2: screenshots and the recents preview never show note content. Applied before the
+        // first frame so no window is ever unsecure, including the lock screen itself.
+        SecureWindow.apply(this)
+
         val container = (application as PrivateNotesApp).container
 
         setContent {
             PrivateNotesTheme {
-                AppNavigation(container = container)
+                AppRoot(container = container)
             }
         }
     }
