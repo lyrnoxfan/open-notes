@@ -1,8 +1,9 @@
-# SQLCipher ships JNI entry points reached reflectively by net.sqlcipher.
--keep class net.sqlcipher.** { *; }
--keep class net.sqlcipher.database.** { *; }
+# SQLCipher reaches its JNI entry points natively; R8 must not rename or strip them.
+-keep,includedescriptorclasses class net.zetetic.database.** { *; }
+-keep,includedescriptorclasses interface net.zetetic.database.** { *; }
+-keepclasseswithmembernames class net.zetetic.database.** { native <methods>; }
+-dontwarn net.zetetic.database.**
 
 # Room generated implementations are referenced by name at runtime.
 -keep class * extends androidx.room.RoomDatabase { *; }
 -keep @androidx.room.Entity class * { *; }
--dontwarn androidx.room.paging.**

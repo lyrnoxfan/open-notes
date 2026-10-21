@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.lyrnox.opennotes"
+    namespace = "com.example.privatenotes"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.lyrnox.opennotes"
+        applicationId = "com.example.privatenotes"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

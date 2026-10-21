@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Open Notes</string>
+    <string name="app_name">私密笔记</string>
+    <string name="note_untitled">无标题</string>
+    <string name="note_list_empty_title">还没有笔记</string>
+    <string name="note_list_empty_body">写下的一切都存在本机加密数据库里。</string>
+    <string name="note_list_error_title">无法打开加密数据库</string>
+    <string name="note_list_error_hint">原有数据没有被删除或重建。请通过备份恢复。</string>
 </resources>

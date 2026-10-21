@@ -1,0 +1,60 @@
+package com.example.privatenotes.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface NoteDao {
+
+    @Insert
+    suspend fun insert(note: NoteEntity)
+
+    @Update
+    suspend fun update(note: NoteEntity)
+
+    @Query("SELECT * FROM notes WHERE id = :id")
+    suspend fun findById(id: String): NoteEntity?
+
+    /** Notes visible in the normal list, newest edit first (§4.3). */
+    @Query("SELECT * FROM notes WHERE deletedAt IS NULL ORDER BY updatedAt DESC")
+    fun observeActive(): Flow<List<NoteEntity>>
+
+    @Transaction
+    @Query("SELECT * FROM notes WHERE id = :id")
+    fun observeWithTags(id: String): Flow<NoteWithTags?>
+
+    /**
+     * Inclusive search over title and body (§7.3).
+     *
+     * Parameters are bound, not concatenated, so quotes, `%`, `_` and other SQL metacharacters
+     * in user input cannot change the statement.
+     */
+    @Query(
+        """
+        SELECT * FROM notes
+        WHERE deletedAt IS NULL
+          AND (title LIKE '%' || :term || '%' ESCAPE '\' OR content LIKE '%' || :term || '%' ESCAPE '\')
+        ORDER BY updatedAt DESC
+        """,
+    )
+    fun search(term: String): Flow<List<NoteEntity>>
+
+    @Query("UPDATE notes SET deletedAt = :timestamp, updatedAt = :timestamp WHERE id = :id")
+    suspend fun moveToTrash(id: String, timestamp: Long)
+
+    @Query("UPDATE notes SET deletedAt = NULL, updatedAt = :timestamp WHERE id = :id")
+    suspend fun restoreFromTrash(id: String, timestamp: Long)
+
+    @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL AND deletedAt <= :cutoff")
+    suspend fun purgeTrashOlderThan(cutoff: Long): Int
+
+    @Query("SELECT COUNT(*) FROM notes WHERE deletedAt IS NULL")
+    suspend fun countActive(): Int
+
+    @Query("SELECT COUNT(*) FROM notes WHERE deletedAt IS NOT NULL")
+    suspend fun countTrashed(): Int
+}
