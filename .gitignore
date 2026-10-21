@@ -22,3 +22,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Release artifacts stay out of the repository
+dist/*.apk
