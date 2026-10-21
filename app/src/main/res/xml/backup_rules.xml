@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notes are encrypted with a Keystore key that never leaves the device.
+     Restoring ciphertext elsewhere is useless, and a wrapped key must never travel. -->
+<full-backup-content>
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+</full-backup-content>
