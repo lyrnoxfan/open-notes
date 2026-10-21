@@ -1,19 +1,28 @@
 package com.example.privatenotes.feature.notes
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,9 +33,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldColors
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -38,10 +44,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.privatenotes.R
+import com.example.privatenotes.ui.components.ContentMaxWidth
 import com.example.privatenotes.ui.markdown.MarkdownText
 
 /**
@@ -62,6 +70,11 @@ import com.example.privatenotes.ui.markdown.MarkdownText
  *
  * Edit and preview share one string held by the ViewModel, so switching between them can neither
  * lose text nor lose uncommitted input; the caret lives here and survives the switch (§7.2).
+ *
+ * Both modes are laid out by the same column, with the same 24dp gutters and the same fonts, so
+ * the first line of the note stays where it was when the preview is toggled. The previous version
+ * had a Material `TextField` (which carries about 16dp of internal horizontal padding) next to a
+ * `TextView` with none, and the text jumped sideways on every toggle.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,7 +172,19 @@ fun NoteEditorScreen(
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.editor_delete)) },
+                            text = {
+                                Text(
+                                    text = stringResource(R.string.editor_delete),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
                             onClick = {
                                 menuOpen = false
                                 viewModel.deleteNote()
@@ -176,65 +201,112 @@ fun NoteEditorScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp),
-        ) {
-            TextField(
-                value = state.title,
-                onValueChange = viewModel::onTitleChange,
-                modifier = Modifier.fillMaxWidth().testTag(EditorTags.TITLE),
-                placeholder = {
-                    Text(
-                        text = stringResource(R.string.editor_title_hint),
-                        style = MaterialTheme.typography.headlineSmall,
-                    )
-                },
-                textStyle = MaterialTheme.typography.headlineSmall,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                singleLine = true,
-                colors = transparentFieldColors(),
-            )
-
-            TagEditorRow(
-                tags = state.tags,
-                onAdd = { tagDialogOpen = true },
-                onRemove = viewModel::removeTag,
-            )
-
-            if (state.isPreview) {
-                MarkdownText(
-                    markdown = state.content,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .testTag(EditorTags.PREVIEW),
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.TopCenter) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = ContentMaxWidth)
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp),
+            ) {
+                EditorTitle(
+                    title = state.title,
+                    onTitleChange = viewModel::onTitleChange,
                 )
-            } else {
-                TextField(
-                    value = TextFieldValue(text = state.content, selection = selection),
-                    onValueChange = { value ->
-                        selection = value.selection
-                        viewModel.onContentChange(value.text)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .testTag(EditorTags.CONTENT),
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.editor_content_hint),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    textStyle = MaterialTheme.typography.bodyLarge,
-                    colors = transparentFieldColors(),
+
+                TagEditorRow(
+                    tags = state.tags,
+                    onAdd = { tagDialogOpen = true },
+                    onRemove = viewModel::removeTag,
                 )
+
+                // One shared box for both modes: the geometry cannot differ between them.
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    Crossfade(
+                        targetState = state.isPreview,
+                        animationSpec = tween(durationMillis = MOTION_MS),
+                        label = "editor-preview",
+                    ) { preview ->
+                        if (preview) {
+                            MarkdownText(
+                                markdown = state.content,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag(EditorTags.PREVIEW),
+                            )
+                        } else {
+                            EditorBody(
+                                content = state.content,
+                                selection = selection,
+                                onValueChange = { value ->
+                                    selection = value.selection
+                                    viewModel.onContentChange(value.text)
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
+    val titleStyle = MaterialTheme.typography.headlineSmall
+    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+
+    BasicTextField(
+        value = title,
+        onValueChange = onTitleChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 4.dp)
+            .testTag(EditorTags.TITLE),
+        textStyle = titleStyle.copy(color = MaterialTheme.colorScheme.onBackground),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+        decorationBox = { inner ->
+            if (title.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.editor_title_hint),
+                    style = titleStyle,
+                    color = placeholderColor,
+                )
+            }
+            inner()
+        },
+    )
+}
+
+@Composable
+private fun EditorBody(
+    content: String,
+    selection: TextRange,
+    onValueChange: (TextFieldValue) -> Unit,
+) {
+    val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
+    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+
+    BasicTextField(
+        value = TextFieldValue(text = content, selection = selection),
+        onValueChange = onValueChange,
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(EditorTags.CONTENT),
+        textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        decorationBox = { inner ->
+            if (content.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.editor_content_hint),
+                    style = bodyStyle,
+                    color = placeholderColor,
+                )
+            }
+            inner()
+        },
+    )
 }
 
 @Composable
@@ -244,27 +316,49 @@ private fun TagEditorRow(
     onRemove: (EditorTag) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        AssistChip(
-            onClick = onAdd,
-            label = { Text(stringResource(R.string.editor_add_tag)) },
-            modifier = Modifier.testTag(EditorTags.ADD_TAG),
-        )
+        TagPill(text = stringResource(R.string.editor_add_tag), onClick = onAdd)
         tags.forEach { tag ->
-            AssistChip(
+            TagPill(
+                text = tag.name,
                 onClick = { onRemove(tag) },
-                label = { Text(tag.name, style = MaterialTheme.typography.labelMedium) },
-                trailingIcon = {
+                trailing = {
                     Icon(
                         imageVector = Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.editor_remove_tag, tag.name),
-                        modifier = Modifier.padding(start = 2.dp),
+                        modifier = Modifier.size(14.dp),
                     )
                 },
             )
         }
+    }
+}
+
+/** A hairline capsule, matching the filter chips on the list. */
+@Composable
+private fun TagPill(
+    text: String,
+    onClick: () -> Unit,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.background, MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        trailing?.invoke()
     }
 }
 
@@ -307,16 +401,8 @@ object EditorTags {
     const val TAG_INPUT = "editor_tag_input"
 }
 
-@Composable
-private fun transparentFieldColors(): TextFieldColors = TextFieldDefaults.colors(
-    focusedContainerColor = Color.Transparent,
-    unfocusedContainerColor = Color.Transparent,
-    disabledContainerColor = Color.Transparent,
-    focusedIndicatorColor = Color.Transparent,
-    unfocusedIndicatorColor = Color.Transparent,
-    disabledIndicatorColor = Color.Transparent,
-    cursorColor = MaterialTheme.colorScheme.primary,
-)
+/** design.md §7: two motion durations, nothing else. */
+internal const val MOTION_MS = 150
 
 @Composable
 private fun SaveStatus.label(): String = when (this) {
