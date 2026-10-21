@@ -1,56 +1,50 @@
 package com.example.privatenotes.data.repository
 
-import com.example.privatenotes.data.local.NoteDao
 import com.example.privatenotes.data.local.NoteEntity
 import kotlinx.coroutines.flow.Flow
-import java.util.UUID
 
 /**
- * Note reads and writes.
+ * Contract for note access.
  *
- * Timestamps come from [TimeSource], never from scattered `System.currentTimeMillis()` calls,
- * and every mutation stamps `updatedAt` here so the rule lives in one place.
+ * The editor's save pipeline is the most failure-prone part of the app, so it is written
+ * against this interface and covered by tests with a fake implementation that can fail and
+ * stall on demand.
  */
-class NoteRepository(
-    private val noteDao: NoteDao,
-    private val timeSource: TimeSource = TimeSource.System,
-) {
+interface NoteRepository {
 
-    fun observeActiveNotes(): Flow<List<NoteEntity>> = noteDao.observeActive()
+    fun observeActiveNotes(): Flow<List<NoteEntity>>
 
-    /** Inclusive search with the user's term escaped so `%` and `_` stay literal (§7.3). */
-    fun search(term: String): Flow<List<NoteEntity>> = noteDao.search(LikePattern.escape(term))
+    fun observeTrash(): Flow<List<NoteEntity>>
 
-    suspend fun findById(id: String): NoteEntity? = noteDao.findById(id)
+    /** Inclusive search over title and body (§7.3). */
+    fun search(term: String): Flow<List<NoteEntity>>
 
-    suspend fun createNote(title: String, content: String): String {
-        val now = timeSource.nowMillis()
-        val id = UUID.randomUUID().toString()
-        noteDao.insert(
-            NoteEntity(
-                id = id,
-                title = title,
-                content = content,
-                createdAt = now,
-                updatedAt = now,
-            ),
-        )
-        return id
+    suspend fun findById(id: String): NoteEntity?
+
+    suspend fun createNote(title: String, content: String): String
+
+    /** Overwrites title and body, stamping `updatedAt` centrally (§5.4). */
+    suspend fun updateNote(id: String, title: String, content: String)
+
+    suspend fun moveToTrash(id: String)
+
+    suspend fun restoreFromTrash(id: String)
+
+    /**
+     * Permanently removes a trashed note and leaves a deletion marker behind (§5.3, §8).
+     *
+     * Both tables move inside one transaction, so there is never a state where the content is
+     * gone but the tombstone is missing.
+     */
+    suspend fun permanentlyDelete(id: String)
+
+    /** Clears notes whose 30-day trash window has expired, leaving markers (§8). */
+    suspend fun purgeExpiredTrash(nowMillis: Long): Int
+
+    suspend fun activeNoteCount(): Int
+
+    companion object {
+        /** §8: notes are kept in the trash for 30 days before automatic cleanup. */
+        const val TRASH_RETENTION_MILLIS: Long = 30L * 24 * 60 * 60 * 1000
     }
-
-    suspend fun updateNoteContent(note: NoteEntity, title: String, content: String) {
-        noteDao.update(note.copy(title = title, content = content, updatedAt = timeSource.nowMillis()))
-    }
-
-    suspend fun moveToTrash(id: String) {
-        noteDao.moveToTrash(id, timeSource.nowMillis())
-    }
-
-    suspend fun restoreFromTrash(id: String) {
-        noteDao.restoreFromTrash(id, timeSource.nowMillis())
-    }
-
-    suspend fun purgeTrashOlderThan(cutoff: Long): Int = noteDao.purgeTrashOlderThan(cutoff)
-
-    suspend fun activeNoteCount(): Int = noteDao.countActive()
 }

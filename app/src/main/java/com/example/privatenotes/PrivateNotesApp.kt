@@ -1,6 +1,7 @@
 package com.example.privatenotes
 
 import android.app.Application
+import kotlinx.coroutines.launch
 
 class PrivateNotesApp : Application() {
 
@@ -10,5 +11,13 @@ class PrivateNotesApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+
+        // §8: notes past the 30-day trash window are cleared automatically. Doing it at launch
+        // means it happens even if the user never opens the trash screen.
+        container.applicationScope.launch {
+            runCatching {
+                container.noteRepository.purgeExpiredTrash(container.timeSource.nowMillis())
+            }
+        }
     }
 }

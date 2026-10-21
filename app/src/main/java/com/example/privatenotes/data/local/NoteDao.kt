@@ -49,6 +49,16 @@ interface NoteDao {
     @Query("UPDATE notes SET deletedAt = NULL, updatedAt = :timestamp WHERE id = :id")
     suspend fun restoreFromTrash(id: String, timestamp: Long)
 
+    /** Notes sitting in the trash, most recently deleted first (§8). */
+    @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeTrash(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE deletedAt IS NOT NULL AND deletedAt <= :cutoff")
+    suspend fun findExpiredTrash(cutoff: Long): List<NoteEntity>
+
+    @Query("DELETE FROM notes WHERE id = :id")
+    suspend fun deleteById(id: String): Int
+
     @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL AND deletedAt <= :cutoff")
     suspend fun purgeTrashOlderThan(cutoff: Long): Int
 
