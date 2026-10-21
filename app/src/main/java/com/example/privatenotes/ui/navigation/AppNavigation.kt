@@ -43,6 +43,8 @@ fun AppNavigation(container: AppContainer) {
                 onCreateNote = { navController.navigate(Routes.editor()) },
                 onOpenNote = { noteId -> navController.navigate(Routes.editor(noteId)) },
                 onOpenTrash = { navController.navigate(Routes.TRASH) },
+                appLock = container.appLock,
+                authenticator = container.appLockAuthenticator,
             )
         }
 

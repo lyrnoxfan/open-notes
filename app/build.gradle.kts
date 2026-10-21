@@ -73,6 +73,9 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.markwon.core)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.fragment.ktx)
+    implementation(libs.androidx.biometric)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

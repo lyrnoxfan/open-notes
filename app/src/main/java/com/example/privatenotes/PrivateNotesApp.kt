@@ -1,7 +1,9 @@
 package com.example.privatenotes
 
 import android.app.Application
-import kotlinx.coroutines.launch
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 
 class PrivateNotesApp : Application() {
 
@@ -12,12 +14,19 @@ class PrivateNotesApp : Application() {
         super.onCreate()
         container = AppContainer(this)
 
-        // §8: notes past the 30-day trash window are cleared automatically. Doing it at launch
-        // means it happens even if the user never opens the trash screen.
-        container.applicationScope.launch {
-            runCatching {
-                container.noteRepository.purgeExpiredTrash(container.timeSource.nowMillis())
-            }
-        }
+        // §6.2: the 30-second grace window is measured at the process level, not per Activity.
+        // ProcessLifecycleOwner ignores configuration changes, so rotating the device or opening
+        // a dialog never counts as leaving the app.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    container.appLock.onForeground()
+                }
+
+                override fun onStop(owner: LifecycleOwner) {
+                    container.appLock.onBackground()
+                }
+            },
+        )
     }
 }
