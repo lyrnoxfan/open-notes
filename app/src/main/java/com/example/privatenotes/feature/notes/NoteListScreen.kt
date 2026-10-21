@@ -11,10 +11,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -24,29 +28,33 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.privatenotes.R
-import com.example.privatenotes.data.local.NoteEntity
+import com.example.privatenotes.data.local.NoteWithTags
+import com.example.privatenotes.ui.components.TagFilterRow
+import com.example.privatenotes.ui.components.TagLabelRow
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Note list (§4.3): page title, entries with title, excerpt and update time, plus a create
- * entry and a way into the trash.
- *
- * Search and tag filtering arrive in phase 3; this screen deliberately carries neither a search
- * field nor a tag row until they actually work.
+ * Note list (§4.3): page title, search field, tag filter, entries with title, excerpt, tags and
+ * update time, plus a create entry and a way into the trash.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,33 +107,51 @@ fun NoteListScreen(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                state.isLoading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            SearchField(
+                query = state.query,
+                onQueryChange = viewModel::onQueryChange,
+            )
 
-                state.errorMessage != null -> ErrorState(state.errorMessage!!)
+            TagFilterRow(
+                tags = state.tags.map { it.name },
+                selectedTag = state.tags.firstOrNull { it.id == state.selectedTagId }?.name,
+                onSelect = { name ->
+                    viewModel.onTagSelected(state.tags.firstOrNull { it.name == name }?.id)
+                },
+            )
 
-                state.notes.isEmpty() -> EmptyState()
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    state.isLoading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
 
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp),
-                ) {
-                    items(state.notes, key = { it.id }) { note ->
-                        NoteRow(
-                            note = note,
-                            onClick = { onOpenNote(note.id) },
-                            onDelete = { viewModel.deleteNote(note.id) },
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.outline,
-                        )
+                    state.errorMessage != null -> ErrorState(state.errorMessage!!)
+
+                    state.isFilterEmpty -> NoMatches(
+                        query = state.query,
+                        onClear = viewModel::clearFilters,
+                    )
+
+                    state.notes.isEmpty() -> EmptyState()
+
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                    ) {
+                        items(state.notes, key = { it.note.id }) { entry ->
+                            NoteRow(
+                                entry = entry,
+                                onClick = { onOpenNote(entry.note.id) },
+                                onDelete = { viewModel.deleteNote(entry.note.id) },
+                            )
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
                     }
                 }
             }
@@ -133,8 +159,56 @@ fun NoteListScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteRow(note: NoteEntity, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .testTag(NoteListTags.SEARCH),
+        placeholder = {
+            Text(
+                text = stringResource(R.string.note_list_search_hint),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Outlined.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = stringResource(R.string.note_list_clear_search),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+        ),
+    )
+}
+
+@Composable
+private fun NoteRow(entry: NoteWithTags, onClick: () -> Unit, onDelete: () -> Unit) {
+    val note = entry.note
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -152,7 +226,7 @@ private fun NoteRow(note: NoteEntity, onClick: () -> Unit, onDelete: () -> Unit)
             )
             if (note.content.isNotBlank()) {
                 Text(
-                    text = note.content,
+                    text = plainExcerpt(note.content),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -160,12 +234,18 @@ private fun NoteRow(note: NoteEntity, onClick: () -> Unit, onDelete: () -> Unit)
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
-            Text(
-                text = formatTimestamp(note.updatedAt),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Row(
                 modifier = Modifier.padding(top = 8.dp),
-            )
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatTimestamp(note.updatedAt),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TagLabelRow(tags = entry.tags.map { it.name })
+            }
         }
         IconButton(onClick = onDelete) {
             Icon(
@@ -175,12 +255,6 @@ private fun NoteRow(note: NoteEntity, onClick: () -> Unit, onDelete: () -> Unit)
             )
         }
     }
-}
-
-/** Stable handles for instrumented UI tests. */
-object NoteListTags {
-    const val CREATE = "note_list_create"
-    const val TRASH = "note_list_trash"
 }
 
 @Composable
@@ -200,6 +274,23 @@ private fun EmptyState() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
+    }
+}
+
+@Composable
+private fun NoMatches(query: String, onClear: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(horizontal = 40.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.note_list_no_match),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        TextButton(onClick = onClear, modifier = Modifier.padding(top = 4.dp)) {
+            Text(stringResource(R.string.note_list_clear_filter))
+        }
     }
 }
 
@@ -228,6 +319,21 @@ private fun ErrorState(message: String) {
         )
     }
 }
+
+/** Stable handles for instrumented UI tests. */
+object NoteListTags {
+    const val CREATE = "note_list_create"
+    const val TRASH = "note_list_trash"
+    const val SEARCH = "note_list_search"
+}
+
+/** Excerpt without Markdown punctuation, so the list reads as text rather than source (§4.3). */
+internal fun plainExcerpt(markdown: String): String =
+    markdown
+        .replace(Regex("```[\\s\\S]*?```"), " ")
+        .replace(Regex("[#>*_`~\\[\\]()]"), "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
 private val listTimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 

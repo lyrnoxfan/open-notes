@@ -36,4 +36,16 @@ interface TagDao {
 
     @Query("DELETE FROM tags WHERE id = :id")
     suspend fun delete(id: String): Int
+
+    @Query("SELECT * FROM tags WHERE id IN (:ids) ORDER BY name ASC")
+    suspend fun findByIds(ids: List<String>): List<TagEntity>
+
+    @Query("SELECT COUNT(*) FROM note_tag_refs WHERE tagId = :tagId")
+    suspend fun usageCount(tagId: String): Int
+
+    @Query("SELECT * FROM tags ORDER BY name ASC")
+    suspend fun findAll(): List<TagEntity>
+
+    @Query("SELECT noteId FROM note_tag_refs WHERE tagId = :tagId")
+    suspend fun noteIdsForTag(tagId: String): List<String>
 }

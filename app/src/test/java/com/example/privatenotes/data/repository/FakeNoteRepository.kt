@@ -1,9 +1,11 @@
 package com.example.privatenotes.data.repository
 
 import com.example.privatenotes.data.local.NoteEntity
+import com.example.privatenotes.data.local.NoteWithTags
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 /**
@@ -28,6 +30,9 @@ class FakeNoteRepository : NoteRepository {
     override fun observeActiveNotes(): Flow<List<NoteEntity>> = notes
 
     override fun observeTrash(): Flow<List<NoteEntity>> = notes
+
+    override fun observeNotes(term: String, tagId: String?): Flow<List<NoteWithTags>> =
+        notes.map { list -> list.map { NoteWithTags(it, emptyList()) } }
 
     override fun search(term: String): Flow<List<NoteEntity>> = notes
 

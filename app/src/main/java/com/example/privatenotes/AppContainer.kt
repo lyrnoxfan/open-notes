@@ -5,6 +5,8 @@ import com.example.privatenotes.data.local.AppDatabase
 import com.example.privatenotes.data.local.EncryptedDatabaseProvider
 import com.example.privatenotes.data.repository.NoteRepository
 import com.example.privatenotes.data.repository.RoomNoteRepository
+import com.example.privatenotes.data.repository.RoomTagRepository
+import com.example.privatenotes.data.repository.TagRepository
 import com.example.privatenotes.data.repository.TimeSource
 import com.example.privatenotes.security.AndroidKeystoreSecretCipher
 import com.example.privatenotes.security.DatabaseKeyManager
@@ -44,5 +46,9 @@ class AppContainer(context: Context) {
 
     val noteRepository: NoteRepository by lazy {
         RoomNoteRepository(database, timeSource)
+    }
+
+    val tagRepository: TagRepository by lazy {
+        RoomTagRepository(database, timeSource)
     }
 }

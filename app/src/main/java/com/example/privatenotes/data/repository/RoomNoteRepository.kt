@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.example.privatenotes.data.local.AppDatabase
 import com.example.privatenotes.data.local.DeletionMarkerEntity
 import com.example.privatenotes.data.local.NoteEntity
+import com.example.privatenotes.data.local.NoteWithTags
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -19,6 +20,9 @@ class RoomNoteRepository(
     override fun observeActiveNotes(): Flow<List<NoteEntity>> = noteDao.observeActive()
 
     override fun observeTrash(): Flow<List<NoteEntity>> = noteDao.observeTrash()
+
+    override fun observeNotes(term: String, tagId: String?): Flow<List<NoteWithTags>> =
+        noteDao.observeNotesWithTags(LikePattern.escape(term.trim()), tagId)
 
     override fun search(term: String): Flow<List<NoteEntity>> =
         noteDao.search(LikePattern.escape(term))

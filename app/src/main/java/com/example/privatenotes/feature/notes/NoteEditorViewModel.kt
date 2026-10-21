@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.privatenotes.data.local.TagEntity
 import com.example.privatenotes.data.repository.NoteRepository
+import com.example.privatenotes.data.repository.TagRepository
 import com.example.privatenotes.data.repository.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +16,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -36,6 +42,9 @@ sealed interface SaveStatus {
     data class Failed(val message: String) : SaveStatus
 }
 
+/** A tag chip in the editor; [id] is null while the note has not been created yet. */
+data class EditorTag(val id: String?, val name: String)
+
 data class NoteEditorUiState(
     val noteId: String? = null,
     val title: String = "",
@@ -44,7 +53,15 @@ data class NoteEditorUiState(
     val saveStatus: SaveStatus = SaveStatus.Idle,
     val loadError: String? = null,
     val isDeleted: Boolean = false,
-)
+    val isPreview: Boolean = false,
+    val persistedTags: List<TagEntity> = emptyList(),
+    /** Tags chosen before the note existed; attached right after the first save. */
+    val pendingTags: List<String> = emptyList(),
+) {
+    val tags: List<EditorTag>
+        get() = persistedTags.map { EditorTag(it.id, it.name) } +
+            pendingTags.map { EditorTag(null, it) }
+}
 
 /**
  * Editor state and the auto-save pipeline (§7.1).
@@ -61,6 +78,7 @@ data class NoteEditorUiState(
  */
 class NoteEditorViewModel(
     private val repository: NoteRepository,
+    private val tagRepository: TagRepository,
     private val existingNoteId: String?,
     private val timeSource: TimeSource,
     /** Outlives the ViewModel so a final save can finish after the screen is gone. */
@@ -103,6 +121,55 @@ class NoteEditorViewModel(
             pending.filterNotNull().debounce(debounceMillis).collect { snapshot ->
                 persist(snapshot)
             }
+        }
+
+        viewModelScope.launch {
+            _uiState
+                .map { it.noteId }
+                .distinctUntilChanged()
+                .flatMapLatest { id ->
+                    if (id == null) flowOf(emptyList()) else tagRepository.observeTagsForNote(id)
+                }
+                .collect { tags -> _uiState.update { it.copy(persistedTags = tags) } }
+        }
+    }
+
+    fun togglePreview() {
+        _uiState.update { it.copy(isPreview = !it.isPreview) }
+    }
+
+    /**
+     * Adds a tag by name, creating it if needed.
+     *
+     * A brand-new note has no id yet, so the name waits in [NoteEditorUiState.pendingTags] and is
+     * attached as part of the first save. That keeps tag entry usable before the first keystroke
+     * has been persisted.
+     */
+    fun addTag(rawName: String) {
+        val name = rawName.trim()
+        if (name.isEmpty()) return
+        if (_uiState.value.tags.any { it.name.equals(name, ignoreCase = true) }) return
+
+        val id = noteId
+        if (id == null) {
+            _uiState.update { it.copy(pendingTags = it.pendingTags + name) }
+            return
+        }
+        viewModelScope.launch {
+            val tagId = runCatching { tagRepository.ensureTag(name) }.getOrNull() ?: return@launch
+            runCatching { tagRepository.attachTag(id, tagId) }
+        }
+    }
+
+    fun removeTag(tag: EditorTag) {
+        val id = tag.id
+        if (id == null) {
+            _uiState.update { state -> state.copy(pendingTags = state.pendingTags - tag.name) }
+            return
+        }
+        val noteId = noteId ?: return
+        viewModelScope.launch {
+            runCatching { tagRepository.detachTag(noteId, id) }
         }
     }
 
@@ -163,6 +230,7 @@ class NoteEditorViewModel(
                     val created = repository.createNote(snapshot.title, snapshot.content)
                     noteId = created
                     _uiState.update { it.copy(noteId = created) }
+                    attachPendingTags(created)
                 } else {
                     repository.updateNote(currentId, snapshot.title, snapshot.content)
                 }
@@ -180,6 +248,16 @@ class NoteEditorViewModel(
         }
     }
 
+    private suspend fun attachPendingTags(createdNoteId: String) {
+        val waiting = _uiState.value.pendingTags
+        if (waiting.isEmpty()) return
+        for (name in waiting) {
+            val tagId = runCatching { tagRepository.ensureTag(name) }.getOrNull() ?: continue
+            runCatching { tagRepository.attachTag(createdNoteId, tagId) }
+        }
+        _uiState.update { it.copy(pendingTags = emptyList()) }
+    }
+
     companion object {
         const val DEFAULT_DEBOUNCE_MILLIS = 1_000L
         private const val LOAD_ERROR = "笔记不存在或已被删除"
@@ -187,6 +265,7 @@ class NoteEditorViewModel(
 
         fun factory(
             repository: NoteRepository,
+            tagRepository: TagRepository,
             noteId: String?,
             timeSource: TimeSource,
             externalScope: CoroutineScope,
@@ -194,6 +273,7 @@ class NoteEditorViewModel(
             initializer {
                 NoteEditorViewModel(
                     repository = repository,
+                    tagRepository = tagRepository,
                     existingNoteId = noteId,
                     timeSource = timeSource,
                     externalScope = externalScope,

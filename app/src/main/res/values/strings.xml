@@ -12,6 +12,11 @@
     <string name="note_list_trash">回收站</string>
     <string name="note_list_delete">删除</string>
 
+    <string name="note_list_search_hint">搜索标题或正文</string>
+    <string name="note_list_clear_search">清除搜索</string>
+    <string name="note_list_no_match">没有匹配的笔记</string>
+    <string name="note_list_clear_filter">清除筛选</string>
+
     <!-- 编辑 -->
     <string name="editor_title_hint">标题</string>
     <string name="editor_content_hint">开始写…</string>
@@ -22,6 +27,13 @@
     <string name="editor_status_saving">保存中…</string>
     <string name="editor_status_saved">已保存</string>
     <string name="editor_status_failed">保存失败：%1$s</string>
+    <string name="editor_preview">预览</string>
+    <string name="editor_edit">编辑</string>
+    <string name="editor_add_tag">添加标签</string>
+    <string name="editor_tag_hint">标签名称</string>
+    <string name="editor_remove_tag">移除标签 %1$s</string>
+    <string name="dialog_cancel">取消</string>
+    <string name="dialog_confirm">确定</string>
 
     <!-- 回收站 -->
     <string name="trash_title">回收站</string>

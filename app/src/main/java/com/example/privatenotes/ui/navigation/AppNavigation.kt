@@ -33,7 +33,10 @@ fun AppNavigation(container: AppContainer) {
     NavHost(navController = navController, startDestination = Routes.NOTES) {
         composable(Routes.NOTES) {
             val listViewModel: NoteListViewModel = viewModel(
-                factory = NoteListViewModel.factory { container.noteRepository },
+                factory = NoteListViewModel.factory(
+                    repositoryProvider = { container.noteRepository },
+                    tagRepositoryProvider = { container.tagRepository },
+                ),
             )
             NoteListScreen(
                 viewModel = listViewModel,
@@ -57,6 +60,7 @@ fun AppNavigation(container: AppContainer) {
             val editorViewModel: NoteEditorViewModel = viewModel(
                 factory = NoteEditorViewModel.factory(
                     repository = container.noteRepository,
+                    tagRepository = container.tagRepository,
                     noteId = noteId,
                     timeSource = container.timeSource,
                     externalScope = container.applicationScope,

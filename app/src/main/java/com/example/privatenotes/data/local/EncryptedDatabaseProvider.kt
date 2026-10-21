@@ -27,9 +27,13 @@ object EncryptedDatabaseProvider {
      * leave the user with an unopenable file and no explanation. The existing file is never
      * deleted or replaced (§6.1).
      */
-    fun open(context: Context, keyManager: DatabaseKeyManager): AppDatabase {
+    fun open(
+        context: Context,
+        keyManager: DatabaseKeyManager,
+        fileName: String = AppDatabase.NAME,
+    ): AppDatabase {
         val appContext = context.applicationContext
-        val databaseFile = appContext.getDatabasePath(AppDatabase.NAME)
+        val databaseFile = appContext.getDatabasePath(fileName)
 
         DatabaseFileGuard.requireNoPlaintextDatabase(databaseFile)
 
@@ -40,23 +44,27 @@ object EncryptedDatabaseProvider {
             )
         }
 
-        return openWithPassphrase(appContext, keyManager.passphrase())
+        return openWithPassphrase(appContext, keyManager.passphrase(), fileName)
     }
 
     /** Opens the database with an explicit passphrase. Used by tests and by the open path above. */
-    fun openWithPassphrase(context: Context, passphrase: ByteArray): AppDatabase {
+    fun openWithPassphrase(
+        context: Context,
+        passphrase: ByteArray,
+        fileName: String = AppDatabase.NAME,
+    ): AppDatabase {
         require(passphrase.isNotEmpty()) { "SQLCipher passphrase must not be empty" }
 
         val appContext = context.applicationContext
         SqlCipherNativeLibrary.ensureLoaded()
 
-        val databaseFile = appContext.getDatabasePath(AppDatabase.NAME)
+        val databaseFile = appContext.getDatabasePath(fileName)
         DatabaseFileGuard.requireNoPlaintextDatabase(databaseFile)
 
         // A private copy: the factory may keep or clear this array; the caller keeps its own.
         val factory = SupportOpenHelperFactory(passphrase.copyOf(), null, false)
 
-        return Room.databaseBuilder(appContext, AppDatabase::class.java, AppDatabase.NAME)
+        return Room.databaseBuilder(appContext, AppDatabase::class.java, fileName)
             .openHelperFactory(factory)
             // Migrations are declared explicitly; there is deliberately no destructive fallback.
             .addMigrations(*Migrations.ALL)

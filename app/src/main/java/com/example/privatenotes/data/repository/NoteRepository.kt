@@ -1,6 +1,7 @@
 package com.example.privatenotes.data.repository
 
 import com.example.privatenotes.data.local.NoteEntity
+import com.example.privatenotes.data.local.NoteWithTags
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -15,6 +16,14 @@ interface NoteRepository {
     fun observeActiveNotes(): Flow<List<NoteEntity>>
 
     fun observeTrash(): Flow<List<NoteEntity>>
+
+    /**
+     * Notes for the list, with tags attached.
+     *
+     * [term] is an inclusive match over title and body; [tagId] filters by tag. Both can be
+     * combined, and both may be empty/null (§7.3).
+     */
+    fun observeNotes(term: String = "", tagId: String? = null): Flow<List<NoteWithTags>>
 
     /** Inclusive search over title and body (§7.3). */
     fun search(term: String): Flow<List<NoteEntity>>

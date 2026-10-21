@@ -62,6 +62,27 @@ interface NoteDao {
     @Query("DELETE FROM notes WHERE deletedAt IS NOT NULL AND deletedAt <= :cutoff")
     suspend fun purgeTrashOlderThan(cutoff: Long): Int
 
+    /**
+     * List/search query with tags attached.
+     *
+     * One statement serves both the plain list and the filtered one: a null [tagId] means "any
+     * tag", and an empty [term] matches everything. Tag filtering is an EXISTS subquery over the
+     * stable-ID join table, so a note with several tags is never duplicated (§7.3).
+     */
+    @Transaction
+    @Query(
+        """
+        SELECT * FROM notes
+        WHERE deletedAt IS NULL
+          AND (:term = '' OR title LIKE '%' || :term || '%' ESCAPE '\' OR content LIKE '%' || :term || '%' ESCAPE '\')
+          AND (:tagId IS NULL OR EXISTS (
+                SELECT 1 FROM note_tag_refs refs
+                WHERE refs.noteId = notes.id AND refs.tagId = :tagId))
+        ORDER BY updatedAt DESC
+        """,
+    )
+    fun observeNotesWithTags(term: String, tagId: String?): Flow<List<NoteWithTags>>
+
     @Query("SELECT COUNT(*) FROM notes WHERE deletedAt IS NULL")
     suspend fun countActive(): Int
 

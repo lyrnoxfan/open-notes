@@ -1,6 +1,7 @@
 package com.example.privatenotes.feature.notes
 
 import com.example.privatenotes.data.repository.FakeNoteRepository
+import com.example.privatenotes.data.repository.FakeTagRepository
 import com.example.privatenotes.data.repository.TimeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -43,11 +44,13 @@ class NoteEditorViewModelTest {
 
     private fun TestScope.viewModel(
         repository: FakeNoteRepository,
+        tagRepository: FakeTagRepository = FakeTagRepository(),
         noteId: String? = null,
         debounceMillis: Long = NoteEditorViewModel.DEFAULT_DEBOUNCE_MILLIS,
     ): NoteEditorViewModel {
         return NoteEditorViewModel(
             repository = repository,
+            tagRepository = tagRepository,
             existingNoteId = noteId,
             timeSource = fixedTime,
             externalScope = backgroundScope,
@@ -210,6 +213,69 @@ class NoteEditorViewModelTest {
             assertEquals("Body", viewModel.uiState.value.content)
             assertTrue(viewModel.uiState.value.isLoaded)
             assertNull(viewModel.uiState.value.loadError)
+    }
+
+    @Test
+    fun `a tag added before the note exists is attached after the first save`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val tagRepository = FakeTagRepository()
+        val viewModel = viewModel(repository, tagRepository)
+
+        viewModel.addTag("工作")
+        assertEquals("nothing to attach yet", 0, tagRepository.attachments.value.size)
+        assertEquals(listOf("工作"), viewModel.uiState.value.tags.map { it.name })
+
+        viewModel.onContentChange("正文")
+        advanceTimeBy(1_100)
+        runCurrent()
+
+        val noteId = repository.notes.value.single().id
+        assertEquals(1, tagRepository.attachments.value.size)
+        assertEquals(noteId, tagRepository.attachments.value.single().noteId)
+        assertTrue(viewModel.uiState.value.pendingTags.isEmpty())
+    }
+
+    @Test
+    fun `duplicate tag names are not added twice`() = runTest(mainDispatcher) {
+        val viewModel = viewModel(FakeNoteRepository(), FakeTagRepository())
+
+        viewModel.addTag("工作")
+        viewModel.addTag("  工作  ")
+        viewModel.addTag("work")
+        viewModel.addTag("WORK")
+
+        // "工作" and "work" survive; the padded duplicate and the case variant do not.
+        assertEquals(listOf("工作", "work"), viewModel.uiState.value.tags.map { it.name })
+    }
+
+    @Test
+    fun `removing a pending tag drops it from the editor`() = runTest(mainDispatcher) {
+        val viewModel = viewModel(FakeNoteRepository(), FakeTagRepository())
+        viewModel.addTag("临时")
+
+        viewModel.removeTag(viewModel.uiState.value.tags.single())
+
+        assertTrue(viewModel.uiState.value.tags.isEmpty())
+    }
+
+    @Test
+    fun `toggling preview keeps the text and the note id`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val viewModel = viewModel(repository)
+
+        viewModel.onContentChange("预览内容")
+        advanceTimeBy(1_100)
+        runCurrent()
+        val noteId = viewModel.uiState.value.noteId
+
+        viewModel.togglePreview()
+        assertTrue(viewModel.uiState.value.isPreview)
+        assertEquals("预览内容", viewModel.uiState.value.content)
+        assertEquals(noteId, viewModel.uiState.value.noteId)
+
+        viewModel.togglePreview()
+        assertEquals("预览内容", viewModel.uiState.value.content)
+        assertTrue(!viewModel.uiState.value.isPreview)
     }
 
     @Test
