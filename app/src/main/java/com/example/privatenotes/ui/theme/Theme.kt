@@ -23,9 +23,26 @@ private val LightColors = lightColorScheme(
     onSurface = DesignTokens.Light.textPrimary,
     surfaceVariant = DesignTokens.Light.surfaceMuted,
     onSurfaceVariant = DesignTokens.Light.textSecondary,
-    outline = DesignTokens.Light.divider,
+    // outline is what Material draws *around* a control, outlineVariant is a separator.
+    outline = DesignTokens.Light.dividerStrong,
     outlineVariant = DesignTokens.Light.divider,
     error = DesignTokens.Light.error,
+    errorContainer = DesignTokens.Light.surfaceMuted,
+    onErrorContainer = DesignTokens.Light.error,
+    // Container roles are all asked for by menus, dialogs and sheets. Left unmapped they would
+    // fall back to Material's grey ramp and put a cold slab in the middle of a warm paper page.
+    surfaceDim = DesignTokens.Light.background,
+    surfaceBright = DesignTokens.Light.surface,
+    surfaceContainerLowest = DesignTokens.Light.background,
+    surfaceContainerLow = DesignTokens.Light.surface,
+    surfaceContainer = DesignTokens.Light.surface,
+    surfaceContainerHigh = DesignTokens.Light.surface,
+    surfaceContainerHighest = DesignTokens.Light.surfaceMuted,
+    // Snackbars are the only "inverted" surface in the app: dark paper on light, light on dark.
+    inverseSurface = DesignTokens.Light.textPrimary,
+    inverseOnSurface = DesignTokens.Light.background,
+    inversePrimary = DesignTokens.Light.accentContainer,
+    scrim = DesignTokens.Light.textPrimary,
 )
 
 private val DarkColors = darkColorScheme(
@@ -45,9 +62,26 @@ private val DarkColors = darkColorScheme(
     onSurface = DesignTokens.Dark.textPrimary,
     surfaceVariant = DesignTokens.Dark.surfaceMuted,
     onSurfaceVariant = DesignTokens.Dark.textSecondary,
-    outline = DesignTokens.Dark.divider,
+    // outline is what Material draws *around* a control, outlineVariant is a separator.
+    outline = DesignTokens.Dark.dividerStrong,
     outlineVariant = DesignTokens.Dark.divider,
     error = DesignTokens.Dark.error,
+    errorContainer = DesignTokens.Dark.surfaceMuted,
+    onErrorContainer = DesignTokens.Dark.error,
+    // Container roles are all asked for by menus, dialogs and sheets. Left unmapped they would
+    // fall back to Material's grey ramp and put a cold slab in the middle of a warm paper page.
+    surfaceDim = DesignTokens.Dark.background,
+    surfaceBright = DesignTokens.Dark.surface,
+    surfaceContainerLowest = DesignTokens.Dark.background,
+    surfaceContainerLow = DesignTokens.Dark.surface,
+    surfaceContainer = DesignTokens.Dark.surface,
+    surfaceContainerHigh = DesignTokens.Dark.surface,
+    surfaceContainerHighest = DesignTokens.Dark.surfaceMuted,
+    // Snackbars are the only "inverted" surface in the app: dark paper on light, light on dark.
+    inverseSurface = DesignTokens.Dark.textPrimary,
+    inverseOnSurface = DesignTokens.Dark.background,
+    inversePrimary = DesignTokens.Dark.accentContainer,
+    scrim = DesignTokens.Dark.textPrimary,
 )
 
 /**

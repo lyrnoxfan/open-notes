@@ -1,6 +1,7 @@
 package com.example.privatenotes.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -32,7 +33,13 @@ fun TagLabelRow(tags: List<String>, modifier: Modifier = Modifier) {
     }
 }
 
-/** Horizontally scrollable tag filter (§4.3, §7.3). */
+/**
+ * Horizontally scrollable tag filter (§4.3, §7.3).
+ *
+ * Chips are quiet by default: a hairline outline on the page background, no fill. Only the tag
+ * that is actually filtering the list is filled, so the row reads as a filter state rather than
+ * a row of buttons.
+ */
 @Composable
 fun TagFilterRow(
     tags: List<String>,
@@ -44,16 +51,28 @@ fun TagFilterRow(
     LazyRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 0.dp),
     ) {
         items(tags, key = { it }) { tag ->
+            val selected = tag == selectedTag
             FilterChip(
-                selected = tag == selectedTag,
+                selected = selected,
                 onClick = { onSelect(tag) },
                 label = { Text(tag, style = MaterialTheme.typography.labelMedium) },
+                shape = MaterialTheme.shapes.small,
                 colors = FilterChipDefaults.filterChipColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = selected,
+                    borderColor = MaterialTheme.colorScheme.outline,
+                    selectedBorderColor = MaterialTheme.colorScheme.primaryContainer,
+                    borderWidth = 1.dp,
+                    selectedBorderWidth = 1.dp,
                 ),
             )
         }
@@ -61,6 +80,3 @@ fun TagFilterRow(
 }
 
 private const val MAX_LABELS = 4
-
-/** Keeps the chip row visually aligned with list content. */
-val TagRowPadding = Modifier.padding(top = 6.dp)

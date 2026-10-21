@@ -1,16 +1,21 @@
 package com.example.privatenotes.feature.notes
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -32,22 +37,33 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,13 +75,20 @@ import com.example.privatenotes.security.AppLock
 import com.example.privatenotes.security.AppLockAuthenticator
 import com.example.privatenotes.ui.components.TagFilterRow
 import com.example.privatenotes.ui.components.TagLabelRow
+import com.example.privatenotes.ui.components.readingWidth
+import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Note list (§4.3): page title, search field, tag filter, entries with title, excerpt, tags and
- * update time, plus a create entry and a way into the trash.
+ * Note list (design.md, plan §4.3): page title, search field, tag filter, entries with title,
+ * excerpt, tags and update time, plus a create entry and a way into the trash.
+ *
+ * Deleting from here is a swipe, not a permanent button in every row: the row keeps its full
+ * width for the text, a stray tap cannot destroy anything, and the move is undone from the
+ * snackbar. The same action is exposed as an accessibility action for TalkBack and switch users.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,16 +103,12 @@ fun NoteListScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var menuOpen by remember { mutableStateOf(false) }
     var lockSettingsOpen by remember { mutableStateOf(false) }
-
-    if (lockSettingsOpen) {
-        LockSettingsDialog(
-            lock = appLock,
-            authenticator = authenticator,
-            onDismiss = { lockSettingsOpen = false },
-        )
-    }
+    val undoLabel = stringResource(R.string.note_list_undo)
+    val deletedLabel = stringResource(R.string.note_list_moved_to_trash)
 
     Scaffold(
         modifier = modifier,
@@ -159,8 +178,15 @@ fun NoteListScreen(
             FloatingActionButton(
                 onClick = onCreateNote,
                 modifier = Modifier.testTag(NoteListTags.CREATE),
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
+                    defaultElevation = 0.dp,
+                    pressedElevation = 0.dp,
+                    focusedElevation = 0.dp,
+                    hoveredElevation = 0.dp,
+                ),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Add,
@@ -168,21 +194,23 @@ fun NoteListScreen(
                 )
             }
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            SearchField(
-                query = state.query,
-                onQueryChange = viewModel::onQueryChange,
-            )
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Column(modifier = Modifier.readingWidth()) {
+                    SearchField(query = state.query, onQueryChange = viewModel::onQueryChange)
 
-            TagFilterRow(
-                tags = state.tags.map { it.name },
-                selectedTag = state.tags.firstOrNull { it.id == state.selectedTagId }?.name,
-                onSelect = { name ->
-                    viewModel.onTagSelected(state.tags.firstOrNull { it.name == name }?.id)
-                },
-            )
+                    TagFilterRow(
+                        tags = state.tags.map { it.name },
+                        selectedTag = state.tags.firstOrNull { it.id == state.selectedTagId }?.name,
+                        onSelect = { name ->
+                            viewModel.onTagSelected(state.tags.firstOrNull { it.name == name }?.id)
+                        },
+                    )
+                }
+            }
 
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -200,20 +228,40 @@ fun NoteListScreen(
 
                     state.notes.isEmpty() -> EmptyState()
 
-                    else -> LazyColumn(
+                    else -> Box(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 8.dp),
+                        contentAlignment = Alignment.TopCenter,
                     ) {
-                        items(state.notes, key = { it.note.id }) { entry ->
-                            NoteRow(
-                                entry = entry,
-                                onClick = { onOpenNote(entry.note.id) },
-                                onDelete = { viewModel.deleteNote(entry.note.id) },
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 20.dp),
-                                color = MaterialTheme.colorScheme.outline,
-                            )
+                        LazyColumn(
+                            modifier = Modifier.fillMaxHeight().readingWidth(),
+                            contentPadding = PaddingValues(bottom = 88.dp),
+                        ) {
+                            items(state.notes, key = { it.note.id }) { entry ->
+                                SwipeableNoteRow(
+                                    entry = entry,
+                                    onClick = { onOpenNote(entry.note.id) },
+                                    onDelete = {
+                                        val noteId = entry.note.id
+                                        viewModel.deleteNote(noteId)
+                                        scope.launch {
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = deletedLabel,
+                                                actionLabel = undoLabel,
+                                                duration = SnackbarDuration.Short,
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                viewModel.undoDelete(noteId)
+                                            }
+                                        }
+                                    },
+                                    deleteActionLabel = deletedLabel,
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    thickness = 1.dp,
+                                )
+                            }
                         }
                     }
                 }
@@ -221,8 +269,7 @@ fun NoteListScreen(
         }
     }
 
-    // §6.2: the user can turn the app lock on or off. It sits here until the settings screen
-    // arrives in phase 6, rather than being a dead switch with no way to reach it.
+    // §6.2: one dialog, opened from the overflow until the settings screen carries the switch.
     if (lockSettingsOpen) {
         LockSettingsDialog(
             lock = appLock,
@@ -235,12 +282,19 @@ fun NoteListScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+    val borderColor = if (query.isEmpty()) {
+        MaterialTheme.colorScheme.outlineVariant
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
     TextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp)
+            .border(1.dp, borderColor, MaterialTheme.shapes.small)
             .testTag(NoteListTags.SEARCH),
         placeholder = {
             Text(
@@ -252,6 +306,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
             Icon(
                 imageVector = Icons.Outlined.Search,
                 contentDescription = null,
+                modifier = Modifier.size(20.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
@@ -261,6 +316,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
                     Icon(
                         imageVector = Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.note_list_clear_search),
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -268,86 +324,139 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
         },
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,
+        shape = MaterialTheme.shapes.small,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(),
         colors = TextFieldDefaults.colors(
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
+            disabledIndicatorColor = Color.Transparent,
+            cursorColor = MaterialTheme.colorScheme.primary,
         ),
     )
 }
 
+/**
+ * A row that can be swiped left to move the note to the trash.
+ *
+ * `enableDismissFromStartToEnd = false` keeps the gesture one-directional, so scrolling back and
+ * forth cannot delete anything by accident.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteRow(entry: NoteWithTags, onClick: () -> Unit, onDelete: () -> Unit) {
-    val note = entry.note
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = 20.dp, end = 4.dp, top = 14.dp, bottom = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = note.title.ifBlank { stringResource(R.string.note_untitled) },
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (note.content.isNotBlank()) {
-                Text(
-                    text = plainExcerpt(note.content),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
+private fun SwipeableNoteRow(
+    entry: NoteWithTags,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    deleteActionLabel: String,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
             }
+        },
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
             Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = formatTimestamp(note.updatedAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Icon(
+                    imageVector = Icons.Outlined.DeleteOutline,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                TagLabelRow(tags = entry.tags.map { it.name })
             }
-        }
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Outlined.DeleteOutline,
-                contentDescription = stringResource(R.string.note_list_delete),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        },
+    ) {
+        NoteRow(
+            entry = entry,
+            onClick = onClick,
+            deleteActionLabel = deleteActionLabel,
+            onDelete = onDelete,
+        )
     }
 }
 
 @Composable
-private fun EmptyState() {
+private fun NoteRow(
+    entry: NoteWithTags,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    deleteActionLabel: String,
+) {
+    val note = entry.note
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 40.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .clickable(onClick = onClick)
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction(deleteActionLabel) {
+                        onDelete()
+                        true
+                    },
+                )
+            }
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp),
     ) {
         Text(
-            text = stringResource(R.string.note_list_empty_title),
+            text = note.title.ifBlank { stringResource(R.string.note_untitled) },
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            text = stringResource(R.string.note_list_empty_body),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 8.dp),
-        )
+        if (note.content.isNotBlank()) {
+            Text(
+                text = plainExcerpt(note.content),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        Row(
+            modifier = Modifier.padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = formatListTimestamp(note.updatedAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TagLabelRow(tags = entry.tags.map { it.name })
+        }
     }
+}
+
+/** One sentence, no illustration (design.md §9): the empty screen is paper, not a poster. */
+@Composable
+private fun EmptyState() {
+    Text(
+        text = stringResource(R.string.note_list_empty_title),
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 40.dp),
+    )
 }
 
 @Composable
@@ -410,7 +519,26 @@ internal fun plainExcerpt(markdown: String): String =
         .replace(Regex("\\s+"), " ")
         .trim()
 
-private val listTimestampFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val thisYearFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("M月d日")
+private val olderFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy年M月d日")
 
-private fun formatTimestamp(epochMillis: Long): String =
-    listTimestampFormatter.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
+/**
+ * Timestamps read the way a person thinks about them: the time of day for today, the day for
+ * this year, the full date before that. A shared `yyyy-MM-dd HH:mm` on every row is precise and
+ * unreadable (§4.3 asks for a quiet list).
+ */
+internal fun formatListTimestamp(
+    epochMillis: Long,
+    now: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault(),
+): String {
+    val instant = Instant.ofEpochMilli(epochMillis).atZone(zone)
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val date: LocalDate = instant.toLocalDate()
+    return when {
+        date == today -> timeFormatter.format(instant)
+        date.year == today.year -> thisYearFormatter.format(instant)
+        else -> olderFormatter.format(instant)
+    }
+}

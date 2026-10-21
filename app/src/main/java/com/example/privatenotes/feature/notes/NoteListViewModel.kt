@@ -100,6 +100,11 @@ class NoteListViewModel(
         viewModelScope.launch { runCatching { repositoryProvider().moveToTrash(noteId) } }
     }
 
+    /** Puts back a note the user swiped away by mistake, before the trash cleanup can touch it. */
+    fun undoDelete(noteId: String) {
+        viewModelScope.launch { runCatching { repositoryProvider().restoreFromTrash(noteId) } }
+    }
+
     companion object {
         private const val STOP_TIMEOUT_MS = 5_000L
 
