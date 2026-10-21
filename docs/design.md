@@ -53,6 +53,13 @@ blog.lyrnox.com 的浅色底是 `#F1E7DA`、强调是 `#A13F04`，本规格沿�
 
 缺字由系统回退：字体是子集，GB2312 之外的生僻字、emoji 会落到系统字体，不会出现豆腐块。
 
+体积（实测，release 包）：子集文件 3.31 MB，compress 后 APK 从 24.91 MB 涨到 26.94 MB，
+增量 2.04 MB。字体文件本身超出「≤ 2.5 MB」的预算 0.81 MB，但安装包增量在「≤ 3 MB」之内。
+取舍写在 `docs/design-report.md`：`scripts/subset-font.sh` 支持只截一级字（1.67 MB），一行
+改动即可切回去。
+
+打包只有 Regular 一个字重。标题要的 Medium 由平台合成加粗——为单个字重再加 3.3 MB 不值得。
+
 ### 2.2 字号表
 
 行距按中文的 1.7–1.8 倍给。标题字重用 Medium，不用 SemiBold——纸感要的是稳，不是粗。
