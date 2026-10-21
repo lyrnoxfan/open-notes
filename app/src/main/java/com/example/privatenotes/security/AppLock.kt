@@ -64,6 +64,14 @@ data class AuthPrompt(
     val title: String,
     val subtitle: String,
     val description: String,
+    /**
+     * Label for the prompt's cancel action.
+     *
+     * Required below API 30: `PromptInfo.Builder.build()` rejects a prompt that neither allows
+     * the device credential nor carries a negative button. It is unused above API 30, where the
+     * system supplies its own dismissal affordance.
+     */
+    val negativeButtonText: String = "",
 )
 
 sealed interface AuthResult {

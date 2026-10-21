@@ -77,6 +77,7 @@ fun LockScreen(
         title = stringResource(R.string.lock_prompt_title),
         subtitle = stringResource(R.string.lock_prompt_subtitle),
         description = stringResource(R.string.lock_prompt_description),
+        negativeButtonText = stringResource(R.string.dialog_cancel),
     )
 
     var availability by remember { mutableStateOf(authenticator.availability()) }
@@ -94,6 +95,27 @@ fun LockScreen(
             lock.unlock()
         } else {
             status = LockStatus.Cancelled
+        }
+    }
+
+    /**
+     * The Keyguard route.
+     *
+     * Reachable on its own because API 26–29 cannot offer the device credential inside the
+     * biometric prompt; without this, an old device with a PIN and a fingerprint would have no
+     * credential fallback at all.
+     */
+    fun startDeviceCredential() {
+        val intent = authenticator.deviceCredentialIntent(prompt)
+        if (intent == null) {
+            lock.endSystemUi()
+            authenticating = false
+            status = LockStatus.NoCredential
+        } else {
+            authenticating = true
+            status = LockStatus.Authenticating
+            lock.beginSystemUi()
+            credentialLauncher.launch(intent)
         }
     }
 
@@ -127,14 +149,7 @@ fun LockScreen(
                         }
                     }
                 } else {
-                    val intent = authenticator.deviceCredentialIntent(prompt)
-                    if (intent == null) {
-                        lock.endSystemUi()
-                        authenticating = false
-                        status = LockStatus.NoCredential
-                    } else {
-                        credentialLauncher.launch(intent)
-                    }
+                    startDeviceCredential()
                 }
             }
         }
@@ -271,6 +286,16 @@ fun LockScreen(
                 TextButton(onClick = { startAuthentication() }) {
                     Text(stringResource(R.string.lock_retry))
                 }
+            } else if (available.mode == CredentialMode.BIOMETRIC) {
+                // Always offered in biometric mode: it is the only route for a device credential
+                // below API 30, and the way out when biometrics are locked out on any version.
+                TextButton(
+                    onClick = { startDeviceCredential() },
+                    enabled = !authenticating,
+                    modifier = Modifier.testTag(LockTags.USE_CREDENTIAL),
+                ) {
+                    Text(stringResource(R.string.lock_use_device_credential))
+                }
             }
         }
     }
@@ -279,6 +304,7 @@ fun LockScreen(
 /** Stable handle for instrumented UI tests. */
 object LockTags {
     const val SCREEN = "lock_screen"
+    const val USE_CREDENTIAL = "lock_use_credential"
 }
 
 private sealed interface LockStatus {

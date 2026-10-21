@@ -3,6 +3,7 @@ package com.example.privatenotes.security
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -13,8 +14,11 @@ import androidx.fragment.app.FragmentActivity
  *
  * Two routes, because they are not interchangeable across API levels:
  *
- * - biometrics enrolled → `BiometricPrompt` with `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`, so the
- *   prompt itself also offers the device PIN (API 30+) or a "use PIN" button (API 26–29);
+ * - biometrics enrolled and API 30+ → `BiometricPrompt` allowing
+ *   `BIOMETRIC_STRONG or DEVICE_CREDENTIAL`, so the prompt itself offers the device PIN;
+ * - biometrics enrolled but API 26–29 → `BiometricPrompt` limited to `BIOMETRIC_STRONG`, because
+ *   combining the two authenticators in one prompt is only supported from API 30. The credential
+ *   route stays reachable through the separate action on the lock screen;
  * - PIN/pattern/password but no enrolled biometrics (possible on API 26–29) → the Keyguard
  *   confirmation screen, which is the only thing that can verify a credential there.
  *
@@ -63,19 +67,38 @@ class AndroidAppLockAuthenticator(context: Context) : AppLockAuthenticator {
             callback,
         )
 
-        val info = BiometricPrompt.PromptInfo.Builder()
+        biometricPrompt.authenticate(buildPromptInfo(prompt, Build.VERSION.SDK_INT))
+    }
+
+    /**
+     * Builds the prompt for the given platform level.
+     *
+     * `DEVICE_CREDENTIAL` may only be combined with a biometric authenticator from API 30; on
+     * 26–29 that combination is rejected outright, so those versions get biometrics only and the
+     * lock screen offers the Keyguard route separately. Parameterised by `sdkInt` so both
+     * branches are covered by tests on one machine.
+     */
+    internal fun buildPromptInfo(prompt: AuthPrompt, sdkInt: Int): BiometricPrompt.PromptInfo {
+        val builder = BiometricPrompt.PromptInfo.Builder()
             .setTitle(prompt.title)
             .setSubtitle(prompt.subtitle)
             .setDescription(prompt.description)
-            // No negative button: when the device credential is allowed the system supplies the
-            // dismissal affordance, and setting both is rejected on API 30+.
-            .setAllowedAuthenticators(
+
+        if (sdkInt >= Build.VERSION_CODES.R) {
+            // No negative button: with the device credential allowed the system supplies the
+            // dismissal affordance, and setting both is rejected.
+            builder.setAllowedAuthenticators(
                 BiometricManager.Authenticators.BIOMETRIC_STRONG or
                     BiometricManager.Authenticators.DEVICE_CREDENTIAL,
             )
-            .build()
+        } else {
+            builder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            // Mandatory on these levels: a prompt without the device credential must offer a way
+            // to dismiss itself, and build() throws if this is missing or blank.
+            builder.setNegativeButtonText(prompt.negativeButtonText)
+        }
 
-        biometricPrompt.authenticate(info)
+        return builder.build()
     }
 
     override fun deviceCredentialIntent(prompt: AuthPrompt): Intent? {
