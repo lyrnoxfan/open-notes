@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -55,6 +56,7 @@ fun NoteListScreen(
     onCreateNote: () -> Unit,
     onOpenNote: (String) -> Unit,
     onOpenTrash: () -> Unit,
+    onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -70,6 +72,15 @@ fun NoteListScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier.testTag(NoteListTags.SETTINGS),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = stringResource(R.string.note_list_settings),
+                        )
+                    }
                     IconButton(onClick = onOpenTrash, modifier = Modifier.testTag(NoteListTags.TRASH)) {
                         Icon(
                             imageVector = Icons.Outlined.DeleteSweep,
@@ -181,6 +192,7 @@ private fun NoteRow(note: NoteEntity, onClick: () -> Unit, onDelete: () -> Unit)
 object NoteListTags {
     const val CREATE = "note_list_create"
     const val TRASH = "note_list_trash"
+    const val SETTINGS = "note_list_settings"
 }
 
 @Composable

@@ -19,5 +19,11 @@ class PrivateNotesApp : Application() {
                 container.noteRepository.purgeExpiredTrash(container.timeSource.nowMillis())
             }
         }
+
+        // §9.4: a launch is also a chance to notice that yesterday's backup never ran. The
+        // call is idempotent and does nothing until a destination has been configured.
+        container.applicationScope.launch {
+            runCatching { container.backupScheduler.onAppForeground() }
+        }
     }
 }

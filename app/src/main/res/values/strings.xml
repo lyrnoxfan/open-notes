@@ -11,6 +11,7 @@
     <string name="note_list_new">新建笔记</string>
     <string name="note_list_trash">回收站</string>
     <string name="note_list_delete">删除</string>
+    <string name="note_list_settings">备份与恢复</string>
 
     <!-- 编辑 -->
     <string name="editor_title_hint">标题</string>
@@ -37,4 +38,86 @@
     <string name="trash_confirm_body">正文会被清除，且无法恢复。仍可通过备份找回。</string>
     <string name="trash_confirm_action">永久删除</string>
     <string name="trash_cancel">取消</string>
+
+    <!-- 备份与恢复 -->
+    <string name="backup_title">备份与恢复</string>
+    <string name="backup_back">返回</string>
+    <string name="backup_section_local">本地备份</string>
+    <string name="backup_section_remote">WebDAV 备份</string>
+    <string name="backup_section_import">导入备份</string>
+    <string name="backup_choose_directory">选择备份目录</string>
+    <string name="backup_change_directory">更改目录</string>
+    <string name="backup_reauthorize">重新授权</string>
+    <string name="backup_local_none">尚未选择本地备份目录。</string>
+    <string name="backup_local_permission_lost">目录授权已失效，请重新授权。</string>
+    <string name="backup_local_hint">每天自动生成一份完整备份，保留最近 30 份。自动备份是明文 JSON；需要加密时使用“立即备份”并设置密码。备份密码不会被保存。</string>
+    <string name="backup_backup_now">立即备份</string>
+    <string name="backup_last_success">最近成功：%1$s</string>
+    <string name="backup_never">从未成功</string>
+    <string name="backup_last_failure">最近失败：%1$s</string>
+    <string name="backup_failure_detail">原因：%1$s</string>
+    <string name="backup_current_state">当前任务：%1$s</string>
+    <string name="backup_state_enqueued">等待执行</string>
+    <string name="backup_state_running">正在执行</string>
+    <string name="backup_state_blocked">等待条件</string>
+    <string name="backup_state_succeeded">已完成</string>
+    <string name="backup_state_failed">失败</string>
+    <string name="backup_state_cancelled">已取消</string>
+    <string name="backup_state_unknown">未知</string>
+
+    <string name="backup_webdav_url">WebDAV 地址</string>
+    <string name="backup_webdav_url_hint">https://example.com/dav/</string>
+    <string name="backup_webdav_username">用户名</string>
+    <string name="backup_webdav_password">密码</string>
+    <string name="backup_webdav_password_saved">已保存密码；留空表示不修改</string>
+    <string name="backup_webdav_directory">远端目录</string>
+    <string name="backup_webdav_directory_hint">例如 notes-backup</string>
+    <string name="backup_webdav_hint">只允许 HTTPS，证书校验不可关闭。自动上传为明文 JSON；需要加密时使用“立即上传”并设置密码。上传使用已保存的配置；修改后请先保存。WebDAV 仅用于单向备份，不会覆盖本地数据。</string>
+    <string name="backup_save">保存配置</string>
+    <string name="backup_test_connection">测试连接</string>
+    <string name="backup_upload_now">立即上传</string>
+    <string name="backup_remote_none">尚未配置 WebDAV。</string>
+    <string name="backup_remote_never">尚未上传成功</string>
+
+    <string name="backup_import_pick">选择备份文件</string>
+    <string name="backup_import_hint">导入默认合并，不覆盖整个数据库。已设置本地备份目录时，导入前会先做一次明文 JSON 安全备份；任何一步失败都会回滚。</string>
+    <string name="backup_import_confirm_title">导入这份备份？</string>
+    <string name="backup_import_confirm_body">将按更新时间合并到现有笔记。较新的本地内容会保留，旧备份不会静默覆盖它。</string>
+    <string name="backup_import_confirm_action">开始导入</string>
+    <string name="backup_import_password_title">输入备份密码</string>
+    <string name="backup_import_password_body">这个备份已加密，需要密码才能读取。</string>
+    <string name="backup_import_report_title">导入完成</string>
+    <string name="backup_import_report_counts">新增笔记 %1$d，更新 %2$d，保留本地 %3$d，未变化 %4$d。</string>
+    <string name="backup_import_report_tombstones">按删除标记跳过 %1$d 篇，删除本地旧副本 %2$d 篇。</string>
+    <string name="backup_import_report_tags">新增标签 %1$d 个，按名称合并 %2$d 个，新增关联 %3$d 条。</string>
+    <string name="backup_import_report_conflicts">检测到 %1$d 处冲突：冲突项保留本地版本，未被静默覆盖。</string>
+    <string name="backup_import_report_safety">导入前安全备份：%1$s</string>
+    <string name="backup_import_report_close">关闭</string>
+
+    <string name="backup_encryption_title">备份加密</string>
+    <string name="backup_encryption_switch">使用密码加密</string>
+    <string name="backup_encryption_password">备份密码</string>
+    <string name="backup_encryption_confirm">确认密码</string>
+    <string name="backup_encryption_warning">不加密的备份是明文 JSON，任何拿到文件的人都能读到全部笔记。</string>
+    <string name="backup_encryption_min">密码至少 8 位</string>
+    <string name="backup_encryption_mismatch">两次输入的密码不一致</string>
+    <string name="backup_encryption_no_store">密码只用于这一次备份，不会被保存。</string>
+    <string name="backup_do_backup">备份</string>
+    <string name="backup_do_upload">上传</string>
+    <string name="backup_cancel">取消</string>
+    <string name="backup_password_required">请输入密码</string>
+
+    <string name="backup_error_not_configured">尚未完成配置</string>
+    <string name="backup_error_permission_lost">备份目录授权已失效，请重新选择</string>
+    <string name="backup_error_wrong_password">密码错误，或备份文件已损坏</string>
+    <string name="backup_error_corrupt">备份文件已损坏</string>
+    <string name="backup_error_unsupported_version">备份来自更高版本，当前版本无法导入</string>
+    <string name="backup_error_invalid_format">不是有效的备份文件</string>
+    <string name="backup_error_invalid_config">配置不正确</string>
+    <string name="backup_error_network">网络不可用或连接中断</string>
+    <string name="backup_error_unauthorized">认证失败，请检查用户名和密码</string>
+    <string name="backup_error_server">服务器返回错误</string>
+    <string name="backup_error_storage">文件读取或写入失败</string>
+    <string name="backup_error_safety_backup">导入前的安全备份失败，导入已取消</string>
+    <string name="backup_error_unknown">操作失败</string>
 </resources>
