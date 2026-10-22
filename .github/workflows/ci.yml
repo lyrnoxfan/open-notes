@@ -97,7 +97,11 @@ jobs:
           # Animations off: they change what the assertions observe and cost real seconds.
           disable-animations: true
           emulator-boot-timeout: 900
-          script: ./gradlew --no-daemon --stacktrace connectedCheck
+          # The seeding, reinstall and IME scripts run against their own install; see
+          # app/src/androidTest/.../ScriptDriven.kt for why they cannot share this suite.
+          script: >-
+            ./gradlew --no-daemon --stacktrace connectedCheck
+            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.example.privatenotes.ScriptDriven
 
       # Without repository admin rights the device-test log cannot be fetched over the API, but
       # annotations are public. One annotation per failure puts the test name and its assertion

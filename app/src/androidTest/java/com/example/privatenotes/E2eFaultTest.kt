@@ -19,6 +19,7 @@ import org.junit.runner.RunWith
  * Each case asserts two things: the operation fails loudly, and the database is bit-for-bit the
  * same afterwards. "Did not report success" alone would pass on a wipe.
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class E2eFaultTest {
 

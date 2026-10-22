@@ -25,6 +25,7 @@ import org.junit.runner.RunWith
  * against those bytes, not against a second copy of the seed logic - otherwise both sides could be
  * wrong in the same direction.
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class E2eSeedTest {
 

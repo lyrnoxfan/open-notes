@@ -29,6 +29,7 @@ import org.junit.runner.RunWith
  * directory afterwards. Typing through the editor rather than inserting rows means the test also
  * covers the paths that write to the WAL and to SharedPreferences.
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class CanarySeedTest {
 

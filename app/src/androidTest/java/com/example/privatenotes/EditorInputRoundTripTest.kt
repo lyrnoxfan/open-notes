@@ -25,6 +25,7 @@ import org.junit.runner.RunWith
  * The composition question is covered by EditorCompositionTest (unit) and
  * scripts/ime-composing-manual.md (device, real IME).
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class EditorInputRoundTripTest {
 

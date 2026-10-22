@@ -21,6 +21,7 @@ import org.junit.runner.RunWith
  * Keystore key, so passing means the export really carried the data across a reinstall rather
  * than a database that was already there.
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class E2eImportVerifyTest {
 

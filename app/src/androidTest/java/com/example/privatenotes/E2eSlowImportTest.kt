@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
  * `am force-stop`. Nothing here asserts success - the assertion lives in [E2eAtomicityTest],
  * which runs in a fresh process afterwards.
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class E2eSlowImportTest {
 
@@ -58,6 +59,7 @@ class E2eSlowImportTest {
  * A half-merged database is the failure this checks for - the import runs in one transaction, so
  * anything in between means the transaction boundary is not where it claims to be.
  */
+@ScriptDriven
 @RunWith(AndroidJUnit4::class)
 class E2eAtomicityTest {
 
