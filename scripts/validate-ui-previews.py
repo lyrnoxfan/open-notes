@@ -5,7 +5,7 @@ import sys
 import zlib
 from pathlib import Path
 
-NAMES = ('list-light', 'list-dark', 'editor-light', 'editor-dark', 'list-large-narrow', 'editor-large-narrow')
+NAMES = ('list-light', 'list-dark', 'editor-light', 'editor-dark', 'list-large-narrow', 'editor-large-narrow', 'settings-light', 'settings-dark', 'trash-light', 'trash-dark')
 
 def validate(path):
     data = path.read_bytes()

@@ -14,9 +14,17 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import com.example.privatenotes.feature.notes.NoteListTags
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.privatenotes.data.local.NoteEntity
 import com.example.privatenotes.data.local.NoteWithTags
+import com.example.privatenotes.feature.backup.BackupSettingsUiState
+import com.example.privatenotes.feature.backup.SettingsActions
+import com.example.privatenotes.feature.backup.SettingsContent
+import com.example.privatenotes.feature.trash.TrashContent
+import androidx.compose.material3.Text
 import com.example.privatenotes.feature.notes.EditorContent
 import com.example.privatenotes.feature.notes.NoteEditorUiState
 import com.example.privatenotes.feature.notes.NoteListContent
@@ -39,6 +47,10 @@ class UiPalettePreviewTest {
     @Test fun listDark() = renderList(true)
     @Test fun editorLight() = renderEditor(false)
     @Test fun editorDark() = renderEditor(true)
+    @Test fun settingsLight() = renderSettings(false)
+    @Test fun settingsDark() = renderSettings(true)
+    @Test fun trashLight() = renderTrash(false)
+    @Test fun trashDark() = renderTrash(true)
 
     @Test fun listLargeNarrow() = renderList(false, largeNarrow = true)
     @Test fun editorLargeNarrow() = renderEditor(false, largeNarrow = true)
@@ -72,6 +84,7 @@ class UiPalettePreviewTest {
                 )
             }
         }
+        compose.onNodeWithTag(NoteListTags.CREATE).assertHeightIsAtLeast(48.dp)
         save("list", dark, largeNarrow)
     }
 
@@ -90,6 +103,34 @@ class UiPalettePreviewTest {
             }
         }
         save("editor", dark, largeNarrow)
+    }
+
+    private fun renderSettings(dark: Boolean) {
+        compose.setContent {
+            PreviewHost(dark, false) {
+                SettingsContent(
+                    state = BackupSettingsUiState(), actions = SettingsActions(),
+                    snackbarHostState = SnackbarHostState(),
+                    // Preview has no credentials or real authentication state.
+                    lockRow = { Text("使用设备凭据保护笔记") }, onBack = {},
+                )
+            }
+        }
+        save("settings", dark, false)
+    }
+
+    private fun renderTrash(dark: Boolean) {
+        val now = System.currentTimeMillis()
+        compose.setContent {
+            PreviewHost(dark, false) {
+                TrashContent(
+                    notes = listOf(NoteEntity("preview-trash", "暂时放下的想法", "", now, now,
+                        deletedAt = now)), isLoading = false, errorMessage = null,
+                    onRestore = {}, onDeleteForever = {}, onBack = {},
+                )
+            }
+        }
+        save("trash", dark, false)
     }
 
     private fun save(screen: String, dark: Boolean, largeNarrow: Boolean) {

@@ -148,6 +148,7 @@ jobs:
             build/ime-roundtrip.txt
             build/long-document*.txt
             build/ui-render.txt
+            build/long-document-evidence/**/*.png
           retention-days: 14
           if-no-files-found: ignore
 

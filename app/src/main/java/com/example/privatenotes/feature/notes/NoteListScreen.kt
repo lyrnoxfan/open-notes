@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -38,7 +37,6 @@ import com.example.privatenotes.ui.components.NoteButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +75,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.privatenotes.ui.theme.LocalActionColors
 import com.example.privatenotes.R
 import com.example.privatenotes.data.local.NoteWithTags
 import com.example.privatenotes.ui.components.TagFilterRow
@@ -243,14 +242,14 @@ internal fun NoteListContent(
             FloatingActionButton(
                 onClick = onCreateNote,
                 modifier = Modifier.testTag(NoteListTags.CREATE),
-                shape = CircleShape,
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = MaterialTheme.shapes.large,
+                containerColor = LocalActionColors.current.first,
+                contentColor = LocalActionColors.current.second,
                 elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 6.dp,
-                    pressedElevation = 8.dp,
-                    focusedElevation = 6.dp,
-                    hoveredElevation = 8.dp,
+                    defaultElevation = 2.dp,
+                    pressedElevation = 3.dp,
+                    focusedElevation = 2.dp,
+                    hoveredElevation = 3.dp,
                 ),
             ) {
                 Icon(
@@ -300,7 +299,7 @@ internal fun NoteListContent(
                     ) {
                         LazyColumn(
                             modifier = Modifier.fillMaxHeight().readingWidth(),
-                            contentPadding = PaddingValues(bottom = 88.dp),
+                            contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp),
                         ) {
                             items(state.notes, key = { it.note.id }) { entry ->
                                 val deleteActionLabel = if (state.trashEnabled) {
@@ -347,11 +346,6 @@ internal fun NoteListContent(
                                         row()
                                     }
                                 }
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant,
-                                    thickness = 1.dp,
-                                )
                             }
                         }
                     }
@@ -400,7 +394,7 @@ private fun ListTopBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.background,
             titleContentColor = MaterialTheme.colorScheme.onBackground,
-            actionIconContentColor = MaterialTheme.colorScheme.onBackground,
+            actionIconContentColor = MaterialTheme.colorScheme.primary,
         ),
     )
 }
@@ -449,7 +443,7 @@ private fun SelectionTopBar(
             containerColor = MaterialTheme.colorScheme.background,
             titleContentColor = MaterialTheme.colorScheme.onBackground,
             navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-            actionIconContentColor = MaterialTheme.colorScheme.onBackground,
+            actionIconContentColor = MaterialTheme.colorScheme.primary,
         ),
     )
 }
@@ -458,7 +452,7 @@ private fun SelectionTopBar(
 @Composable
 private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
     val borderColor = if (query.isEmpty()) {
-        MaterialTheme.colorScheme.outlineVariant
+        Color.Transparent
     } else {
         MaterialTheme.colorScheme.primary
     }
@@ -469,7 +463,7 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp)
-            .border(1.dp, borderColor, MaterialTheme.shapes.small)
+            .border(1.dp, borderColor, MaterialTheme.shapes.medium)
             .testTag(NoteListTags.SEARCH),
         placeholder = {
             Text(
@@ -499,12 +493,12 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
         },
         singleLine = true,
         textStyle = MaterialTheme.typography.bodyMedium,
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialTheme.shapes.medium,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(),
         colors = TextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
@@ -547,7 +541,9 @@ private fun SwipeableNoteRow(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.tertiaryContainer)
                     .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
@@ -580,14 +576,14 @@ private fun NoteRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 5.dp)
-            .clip(MaterialTheme.shapes.medium)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(MaterialTheme.shapes.large)
             .background(if (picked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
             .border(
-                width = 1.dp,
+                width = if (picked) 1.dp else 0.5.dp,
                 color = if (picked) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
                         else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = MaterialTheme.shapes.medium,
+                shape = MaterialTheme.shapes.large,
             )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics {
