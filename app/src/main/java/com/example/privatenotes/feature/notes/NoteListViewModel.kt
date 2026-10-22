@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.privatenotes.data.NoteSettings
 import com.example.privatenotes.data.local.NoteWithTags
 import com.example.privatenotes.data.local.TagEntity
 import com.example.privatenotes.data.repository.NoteRepository
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class NoteListUiState(
@@ -31,15 +33,20 @@ data class NoteListUiState(
     val isLoading: Boolean = true,
     /** Set when the encrypted store cannot be opened; never silently swallowed. */
     val errorMessage: String? = null,
+    /** Notes picked for batch deletion; empty while no selection is going on. */
+    val selection: Set<String> = emptySet(),
+    val trashEnabled: Boolean = true,
 ) {
     val isFiltering: Boolean get() = query.isNotBlank() || selectedTagId != null
 
     /** True when the list is empty because of the current filter, not because nothing exists. */
     val isFilterEmpty: Boolean get() = notes.isEmpty() && isFiltering
+
+    val isSelecting: Boolean get() = selection.isNotEmpty()
 }
 
 /**
- * State for the note list: search term and tag filter feed one query (§7.3).
+ * State for the note list: search, tag filter and batch selection feed one screen (§4.3, §7.3).
  *
  * The repository is supplied lazily: opening the encrypted database can fail (the Keystore key
  * may have been invalidated), and that failure belongs on screen as an error state rather than
@@ -49,10 +56,12 @@ data class NoteListUiState(
 class NoteListViewModel(
     private val repositoryProvider: () -> NoteRepository,
     private val tagRepositoryProvider: () -> TagRepository,
+    private val noteSettings: NoteSettings,
 ) : ViewModel() {
 
     private val query = MutableStateFlow("")
     private val selectedTagId = MutableStateFlow<String?>(null)
+    private val selection = MutableStateFlow<Set<String>>(emptySet())
 
     /**
      * Typing runs a `LIKE '%term%'` over title and body, which cannot use an index and touches
@@ -67,14 +76,27 @@ class NoteListViewModel(
     // state instead of a crash during construction.
     private val tags = flow { emitAll(tagRepositoryProvider().observeAll()) }
 
+    private data class ListData(
+        val notes: List<NoteWithTags>,
+        val tags: List<TagEntity>,
+        val term: String,
+        val tagId: String?,
+    )
+
+    private val listData = combine(results, tags, query, selectedTagId) { notes, allTags, term, tagId ->
+        ListData(notes, allTags, term, tagId)
+    }
+
     val uiState: StateFlow<NoteListUiState> =
-        combine(results, tags, query, selectedTagId) { notes, allTags, term, tagId ->
+        combine(listData, selection, noteSettings.trashEnabled) { data, picked, trashOn ->
             NoteListUiState(
-                notes = notes,
-                tags = allTags,
-                query = term,
-                selectedTagId = tagId,
+                notes = data.notes,
+                tags = data.tags,
+                query = data.term,
+                selectedTagId = data.tagId,
                 isLoading = false,
+                selection = picked,
+                trashEnabled = trashOn,
             )
         }
             .catch { throwable ->
@@ -104,6 +126,61 @@ class NoteListViewModel(
         selectedTagId.value = null
     }
 
+    // ---------------------------------------------------------------- selection
+
+    /** Enters selection mode with one note picked; long-press is the entry point. */
+    fun startSelection(noteId: String) {
+        selection.value = setOf(noteId)
+    }
+
+    fun toggleSelected(noteId: String) {
+        selection.update { if (noteId in it) it - noteId else it + noteId }
+    }
+
+    /** Picks every note currently visible, so a filter doubles as a way to scope the batch. */
+    fun selectAll() {
+        selection.value = uiState.value.notes.map { it.note.id }.toSet()
+    }
+
+    fun clearSelection() {
+        selection.value = emptySet()
+    }
+
+    /**
+     * Deletes the picked notes the way the trash switch says: into the trash with an undo, or
+     * straight to permanent removal when it is off.
+     *
+     * [onDone] receives how many were actually removed, so the caller can tell a real delete from
+     * one that failed instead of offering an undo for it.
+     */
+    fun deleteSelected(onDone: (deleted: Int) -> Unit = {}) {
+        val ids = selection.value.toList()
+        if (ids.isEmpty()) return
+        val trashOn = noteSettings.trashEnabled.value
+        viewModelScope.launch {
+            // Only ids that still exist can be removed; counting the request instead would report
+            // notes that a concurrent edit already took away.
+            val existing = ids.filter { runCatching { repositoryProvider().findById(it) }.getOrNull() != null }
+            val removed = runCatching {
+                if (trashOn) {
+                    repositoryProvider().moveToTrashAll(existing)
+                } else {
+                    repositoryProvider().deletePermanentlyAll(existing)
+                }
+                existing.size
+            }.getOrDefault(0)
+            clearSelection()
+            onDone(removed)
+        }
+    }
+
+    /** Puts back a batch deleted by mistake; only possible while the trash is on. */
+    fun restoreSelected(ids: List<String>) {
+        viewModelScope.launch {
+            ids.forEach { id -> runCatching { repositoryProvider().restoreFromTrash(id) } }
+        }
+    }
+
     fun deleteNote(noteId: String) {
         viewModelScope.launch { runCatching { repositoryProvider().moveToTrash(noteId) } }
     }
@@ -126,8 +203,9 @@ class NoteListViewModel(
         fun factory(
             repositoryProvider: () -> NoteRepository,
             tagRepositoryProvider: () -> TagRepository,
+            noteSettings: NoteSettings,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NoteListViewModel(repositoryProvider, tagRepositoryProvider) }
+            initializer { NoteListViewModel(repositoryProvider, tagRepositoryProvider, noteSettings) }
         }
     }
 }

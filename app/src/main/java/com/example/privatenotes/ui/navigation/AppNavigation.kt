@@ -57,6 +57,7 @@ fun AppNavigation(container: AppContainer) {
                 factory = NoteListViewModel.factory(
                     repositoryProvider = { container.noteRepository },
                     tagRepositoryProvider = { container.tagRepository },
+                    noteSettings = container.noteSettings,
                 ),
             )
             NoteListScreen(
@@ -83,6 +84,7 @@ fun AppNavigation(container: AppContainer) {
                 factory = NoteEditorViewModel.factory(
                     repository = container.noteRepository,
                     tagRepository = container.tagRepository,
+                    noteSettings = container.noteSettings,
                     noteId = noteId,
                     timeSource = container.timeSource,
                     externalScope = container.applicationScope,

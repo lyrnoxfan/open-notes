@@ -118,6 +118,37 @@ class RoomNoteRepositoryTest {
     }
 
     @Test
+    fun `batch trash removes every picked note at once`() = runBlocking {
+        val first = repository.createNote("one", "body")
+        val second = repository.createNote("two", "body")
+        val kept = repository.createNote("kept", "body")
+
+        repository.moveToTrashAll(listOf(first, second))
+
+        // findById still returns trashed rows; "out of the list" means the active query, as in
+        // the single-note delete test.
+        assertEquals(listOf(kept), repository.observeActiveNotes().first().map { it.id })
+        assertEquals(
+            "both picked notes are in the trash",
+            setOf(first, second),
+            repository.observeTrash().first().map { it.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun `batch permanent deletion leaves one marker per note`() = runBlocking {
+        val first = repository.createNote("one", "body")
+        val second = repository.createNote("two", "body")
+
+        repository.deletePermanentlyAll(listOf(first, second))
+
+        assertNull(repository.findById(first))
+        assertNull(repository.findById(second))
+        assertNotNull(database.deletionMarkerDao().findByNoteId(first))
+        assertNotNull(database.deletionMarkerDao().findByNoteId(second))
+    }
+
+    @Test
     fun `expired trash is purged with markers while recent trash survives`() = runBlocking {
         val oldId = repository.createNote("old", "body")
         repository.moveToTrash(oldId)

@@ -12,6 +12,13 @@
     <string name="note_list_trash">回收站</string>
     <string name="note_list_delete">删除</string>
     <string name="note_tags_label">标签：%1$s</string>
+    <string name="note_list_selection_title">已选 %1$d 篇</string>
+    <string name="note_list_select_all">全选</string>
+    <string name="note_list_delete_selected">删除所选</string>
+    <string name="note_list_exit_selection">退出选择</string>
+    <string name="note_list_deleted_permanent">已永久删除</string>
+    <string name="note_list_batch_confirm_title">永久删除 %1$d 篇笔记？</string>
+    <string name="note_list_batch_confirm_body">回收站已关闭，删除后无法恢复。</string>
 
     <string name="note_list_search_hint">搜索标题或正文</string>
     <string name="note_list_clear_search">清除搜索</string>
@@ -27,6 +34,8 @@
     <string name="editor_back">返回</string>
     <string name="editor_more">更多</string>
     <string name="editor_delete">删除这篇笔记</string>
+    <string name="editor_delete_confirm_title">永久删除这篇笔记？</string>
+    <string name="editor_delete_confirm_body">回收站已关闭，删除后无法恢复。</string>
     <string name="editor_status_pending">未保存</string>
     <string name="editor_status_saving">保存中…</string>
     <string name="editor_status_saved">已保存</string>
@@ -99,6 +108,11 @@
     <string name="backup_retention_current">当前：%1$s</string>
     <string name="backup_back">返回</string>
     <string name="settings_section_lock">应用锁</string>
+    <string name="settings_section_trash">回收站</string>
+    <string name="trash_settings_switch">删除时先移入回收站</string>
+    <string name="trash_settings_hint">开启后，删除的笔记在回收站保留 30 天，可随时恢复；关闭后，删除立即永久生效，列表里的回收站入口也会隐藏。已进入回收站的笔记仍保留到 30 天期满。</string>
+    <string name="trash_settings_disable_confirm_title">关闭回收站？</string>
+    <string name="trash_settings_disable_confirm_body">关闭后，删除笔记将直接永久删除，无法恢复。回收站里已有的笔记仍保留到 30 天期满。</string>
     <string name="settings_section_status">备份状态</string>
     <string name="settings_section_about">关于</string>
     <string name="settings_section_tags">标签管理</string>

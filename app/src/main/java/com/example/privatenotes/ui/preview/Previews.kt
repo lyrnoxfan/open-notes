@@ -116,6 +116,11 @@ private fun ListPreview(state: NoteListUiState) {
             onTagSelected = {},
             onClearFilters = {},
             onDeleteNote = {},
+            onToggleSelected = {},
+            onStartSelection = {},
+            onSelectAll = {},
+            onClearSelection = {},
+            onDeleteSelected = {},
         )
     }
 }

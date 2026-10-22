@@ -37,6 +37,9 @@ interface NoteRepository {
 
     suspend fun moveToTrash(id: String)
 
+    /** Moves a batch of notes into the trash in one transaction (batch delete, §4.3). */
+    suspend fun moveToTrashAll(ids: List<String>)
+
     suspend fun restoreFromTrash(id: String)
 
     /**
@@ -46,6 +49,12 @@ interface NoteRepository {
      * gone but the tombstone is missing.
      */
     suspend fun permanentlyDelete(id: String)
+
+    /**
+     * Permanently removes notes without a trip through the trash, leaving markers, for when the
+     * user has turned the trash off (§8). One transaction for the whole batch.
+     */
+    suspend fun deletePermanentlyAll(ids: List<String>)
 
     /** Clears notes whose 30-day trash window has expired, leaving markers (§8). */
     suspend fun purgeExpiredTrash(nowMillis: Long): Int

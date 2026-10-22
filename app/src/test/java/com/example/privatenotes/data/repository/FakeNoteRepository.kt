@@ -22,6 +22,7 @@ class FakeNoteRepository : NoteRepository {
     val writeLog = mutableListOf<String>()
 
     var failWrites: Boolean = false
+    var failDeletes: Boolean = false
     var slowUpdateMillis: Long = 0
     var createCount: Int = 0
 
@@ -67,13 +68,25 @@ class FakeNoteRepository : NoteRepository {
     }
 
     override suspend fun moveToTrash(id: String) {
+        if (failDeletes) throw IllegalStateException("delete failed")
         notes.value = notes.value.filterNot { it.id == id }
+    }
+
+    override suspend fun moveToTrashAll(ids: List<String>) {
+        if (failDeletes) throw IllegalStateException("delete failed")
+        ids.forEach { moveToTrash(it) }
     }
 
     override suspend fun restoreFromTrash(id: String) = Unit
 
     override suspend fun permanentlyDelete(id: String) {
+        if (failDeletes) throw IllegalStateException("delete failed")
         notes.value = notes.value.filterNot { it.id == id }
+    }
+
+    override suspend fun deletePermanentlyAll(ids: List<String>) {
+        if (failDeletes) throw IllegalStateException("delete failed")
+        ids.forEach { permanentlyDelete(it) }
     }
 
     override suspend fun purgeExpiredTrash(nowMillis: Long): Int = 0

@@ -17,6 +17,8 @@ import com.example.privatenotes.data.backup.NoteSyncCoordinator
 import com.example.privatenotes.data.backup.SafBackupDirectory
 import com.example.privatenotes.data.backup.WebDavBackupManager
 import com.example.privatenotes.data.backup.WebDavClient
+import com.example.privatenotes.data.NoteSettings
+import com.example.privatenotes.data.SharedPreferencesNoteSettings
 import com.example.privatenotes.data.local.AppDatabase
 import com.example.privatenotes.data.local.EncryptedDatabaseProvider
 import com.example.privatenotes.data.repository.NoteRepository
@@ -58,6 +60,9 @@ class AppContainer(context: Context) {
     val applicationScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     val timeSource: TimeSource = TimeSource.System
+
+    /** Plain user preferences: the trash switch and its future neighbours. */
+    val noteSettings: NoteSettings by lazy { SharedPreferencesNoteSettings(appContext) }
 
     val keyManager: DatabaseKeyManager = DatabaseKeyManager(
         store = SharedPreferencesWrappedKeyStore(appContext),

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.privatenotes.data.NoteSettings
 import com.example.privatenotes.data.local.TagEntity
 import com.example.privatenotes.data.repository.NoteRepository
 import com.example.privatenotes.data.repository.TagRepository
@@ -57,6 +58,8 @@ data class NoteEditorUiState(
     val persistedTags: List<TagEntity> = emptyList(),
     /** Tags chosen before the note existed; attached right after the first save. */
     val pendingTags: List<String> = emptyList(),
+    /** Off means the delete action below removes the note outright and must confirm first. */
+    val trashEnabled: Boolean = true,
 ) {
     val tags: List<EditorTag>
         get() = persistedTags.map { EditorTag(it.id, it.name) } +
@@ -79,6 +82,7 @@ data class NoteEditorUiState(
 class NoteEditorViewModel(
     private val repository: NoteRepository,
     private val tagRepository: TagRepository,
+    private val noteSettings: NoteSettings,
     private val existingNoteId: String?,
     private val timeSource: TimeSource,
     /** Outlives the ViewModel so a final save can finish after the screen is gone. */
@@ -138,6 +142,12 @@ class NoteEditorViewModel(
                     if (id == null) flowOf(emptyList()) else tagRepository.observeTagsForNote(id)
                 }
                 .collect { tags -> _uiState.update { it.copy(persistedTags = tags) } }
+        }
+
+        viewModelScope.launch {
+            noteSettings.trashEnabled.collect { enabled ->
+                _uiState.update { it.copy(trashEnabled = enabled) }
+            }
         }
     }
 
@@ -214,12 +224,34 @@ class NoteEditorViewModel(
 
     fun deleteNote() {
         if (deleted) return
-        deleted = true
-        pending.value = null
         val id = noteId
-        viewModelScope.launch {
-            if (id != null) runCatching { repository.moveToTrash(id) }
+        // Nothing was ever persisted, so there is nothing to delete: leaving the screen is the
+        // whole operation.
+        if (id == null) {
+            deleted = true
+            pending.value = null
             _uiState.update { it.copy(isDeleted = true) }
+            return
+        }
+        viewModelScope.launch {
+            val outcome = runCatching {
+                if (noteSettings.trashEnabled.value) {
+                    repository.moveToTrash(id)
+                } else {
+                    repository.deletePermanentlyAll(listOf(id))
+                }
+            }
+            outcome.onSuccess {
+                deleted = true
+                pending.value = null
+                _uiState.update { it.copy(isDeleted = true) }
+            }.onFailure { failure ->
+                // Leaving the editor over a failed delete would look exactly like a successful
+                // one, and the note would still be in the list, un-deleted. Say so instead.
+                _uiState.update {
+                    it.copy(saveStatus = SaveStatus.Failed(failure.message ?: DELETE_ERROR))
+                }
+            }
         }
     }
 
@@ -272,10 +304,12 @@ class NoteEditorViewModel(
         const val DEFAULT_DEBOUNCE_MILLIS = 1_000L
         private const val LOAD_ERROR = "笔记不存在或已被删除"
         private const val SAVE_ERROR = "保存失败"
+        private const val DELETE_ERROR = "删除失败"
 
         fun factory(
             repository: NoteRepository,
             tagRepository: TagRepository,
+            noteSettings: NoteSettings,
             noteId: String?,
             timeSource: TimeSource,
             externalScope: CoroutineScope,
@@ -285,6 +319,7 @@ class NoteEditorViewModel(
                 NoteEditorViewModel(
                     repository = repository,
                     tagRepository = tagRepository,
+                    noteSettings = noteSettings,
                     existingNoteId = noteId,
                     timeSource = timeSource,
                     externalScope = externalScope,

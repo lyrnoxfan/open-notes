@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.work.WorkInfo
 import java.io.File
 import com.example.privatenotes.AppContainer
+import com.example.privatenotes.data.NoteSettings
 import com.example.privatenotes.data.backup.BackupDirectory
 import com.example.privatenotes.data.backup.BackupDocumentInfo
 import com.example.privatenotes.data.backup.BackupErrorKind
@@ -91,6 +92,8 @@ data class BackupSettingsUiState(
     val autoSyncEnabled: Boolean = false,
     /** 0 means keep every local backup file. */
     val localRetention: Int = BackupStatus.DEFAULT_LOCAL_RETENTION,
+    /** Whether deleting a note goes through the 30-day trash; the list screen acts on this too. */
+    val trashEnabled: Boolean = true,
 ) {
     val busy: Boolean get() = operation != null
     val canBackupLocal: Boolean get() = localConfigured && localAuthorized
@@ -110,6 +113,7 @@ class BackupSettingsViewModel(
     private val webDavBackupManager: WebDavBackupManager,
     private val importer: BackupImporter,
     private val scheduler: BackupScheduler,
+    private val noteSettings: NoteSettings,
     /** Where a downloaded backup is staged before being merged; the app cache directory. */
     private val cacheDirProvider: () -> File = { File(System.getProperty("java.io.tmpdir") ?: ".") },
 ) : ViewModel() {
@@ -316,6 +320,11 @@ class BackupSettingsViewModel(
         statusStore.setLocalRetention(count)
     }
 
+    /** Turns the trash on or off; persisted immediately, acted on by every delete path. */
+    fun setTrashEnabled(enabled: Boolean) {
+        noteSettings.setTrashEnabled(enabled)
+    }
+
     /** Asks the server what it has, newest first, so the user can choose what to merge back. */
     fun listRemoteBackups() {
         if (_state.value.busy) return
@@ -517,19 +526,23 @@ class BackupSettingsViewModel(
                 statusStore.status,
                 scheduler.observeLocalWork().catch { emit(null) },
                 scheduler.observeRemoteWork().catch { emit(null) },
-            ) { status, localWork, remoteWork ->
-                Triple(status, localWork, remoteWork)
+                noteSettings.trashEnabled,
+            ) { status, localWork, remoteWork, trashOn ->
+                Quad(status, localWork, remoteWork, trashOn)
             }
-                .collect { (status, localWork, remoteWork) ->
-                    applyStatus(status, localWork, remoteWork)
+                .collect { (status, localWork, remoteWork, trashOn) ->
+                    applyStatus(status, localWork, remoteWork, trashOn)
                 }
         }
     }
+
+    private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     private fun applyStatus(
         status: BackupStatus,
         localWork: WorkInfo.State? = _state.value.localWorkState,
         remoteWork: WorkInfo.State? = _state.value.remoteWorkState,
+        trashEnabled: Boolean = _state.value.trashEnabled,
     ) {
         _state.update { current ->
             current.copy(
@@ -555,6 +568,7 @@ class BackupSettingsViewModel(
                 remoteWorkState = remoteWork,
                 autoSyncEnabled = status.autoSyncEnabled,
                 localRetention = status.localRetention,
+                trashEnabled = trashEnabled,
             )
         }
     }
@@ -584,6 +598,7 @@ class BackupSettingsViewModel(
                     webDavBackupManager = container.webDavBackupManager,
                     importer = container.backupImporter,
                     scheduler = container.backupScheduler,
+                    noteSettings = container.noteSettings,
                     cacheDirProvider = { container.cacheDirectory },
                 )
             }

@@ -1,5 +1,6 @@
 package com.example.privatenotes.feature.notes
 
+import com.example.privatenotes.data.FakeNoteSettings
 import com.example.privatenotes.data.repository.FakeNoteRepository
 import com.example.privatenotes.data.repository.FakeTagRepository
 import com.example.privatenotes.data.repository.TimeSource
@@ -45,12 +46,14 @@ class NoteEditorViewModelTest {
     private fun TestScope.viewModel(
         repository: FakeNoteRepository,
         tagRepository: FakeTagRepository = FakeTagRepository(),
+        noteSettings: FakeNoteSettings = FakeNoteSettings(),
         noteId: String? = null,
         debounceMillis: Long = NoteEditorViewModel.DEFAULT_DEBOUNCE_MILLIS,
     ): NoteEditorViewModel {
         return NoteEditorViewModel(
             repository = repository,
             tagRepository = tagRepository,
+            noteSettings = noteSettings,
             existingNoteId = noteId,
             timeSource = fixedTime,
             externalScope = backgroundScope,
@@ -282,20 +285,75 @@ class NoteEditorViewModelTest {
     fun `deleting stops further writes`() = runTest(mainDispatcher) {
         val repository = FakeNoteRepository()
         val viewModel = viewModel(repository)
-            viewModel.onContentChange("draft")
-            advanceTimeBy(1_100)
-            runCurrent()
-            val writesBefore = repository.writeLog.size
 
-            viewModel.deleteNote()
-            advanceTimeBy(100)
-            runCurrent()
+        viewModel.onContentChange("draft")
+        advanceTimeBy(1_100)
+        runCurrent()
+        val writesBefore = repository.writeLog.size
 
-            viewModel.onContentChange("after delete")
-            advanceTimeBy(2_000)
-            runCurrent()
+        viewModel.deleteNote()
+        advanceTimeBy(100)
+        runCurrent()
 
-            assertEquals("nothing may be written after deletion", writesBefore, repository.writeLog.size)
-            assertTrue(viewModel.uiState.value.isDeleted)
+        viewModel.onContentChange("after delete")
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        assertEquals("nothing may be written after deletion", writesBefore, repository.writeLog.size)
+        assertTrue(viewModel.uiState.value.isDeleted)
+    }
+
+    @Test
+    fun `deleting with the trash off removes the note outright`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val settings = FakeNoteSettings(trashEnabled = false)
+        val viewModel = viewModel(repository, noteSettings = settings)
+
+        viewModel.onContentChange("gone either way")
+        advanceTimeBy(1_100)
+        runCurrent()
+
+        viewModel.deleteNote()
+        advanceTimeBy(100)
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertEquals("no note is left for the trash to hold", 0, repository.notes.value.size)
+    }
+
+    @Test
+    fun `a failed delete keeps the editor open and says so`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val viewModel = viewModel(repository)
+
+        viewModel.onContentChange("must not vanish")
+        advanceTimeBy(1_100)
+        runCurrent()
+        val saved = repository.notes.value.single()
+
+        repository.failDeletes = true
+        viewModel.deleteNote()
+        runCurrent()
+
+        // isDeleted drives the automatic popBackStack: setting it after a failed write would look
+        // exactly like a successful delete while the note is still there.
+        assertTrue("the screen must not close", !viewModel.uiState.value.isDeleted)
+        assertTrue(
+            "the failure must be shown",
+            viewModel.uiState.value.saveStatus is SaveStatus.Failed,
+        )
+        assertEquals("the note is untouched", saved, repository.notes.value.single())
+    }
+
+    @Test
+    fun `deleting a note that was never saved just leaves`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val viewModel = viewModel(repository)
+
+        viewModel.deleteNote()
+        runCurrent()
+
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertTrue("nothing was ever written", repository.notes.value.isEmpty())
     }
 }

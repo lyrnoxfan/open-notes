@@ -16,8 +16,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
@@ -49,6 +52,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -59,6 +65,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import kotlin.math.roundToInt
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -141,6 +148,7 @@ internal fun EditorContent(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
 
     // A failed save is easy to miss when the status line is not being watched: buzz once so the
     // failure is felt, not just seen.
@@ -156,9 +164,15 @@ internal fun EditorContent(
     // carries no composition, and the editor rebuilt on every keystroke (docs/test-report.md P1).
     // rememberSaveable, so the caret and the composing buffer also survive a configuration change;
     // EditorContent stays composed while the preview is toggled, so they survive that too.
+    // The caret starts at the end, which is what "keep writing where I left off" means; the view
+    // itself opens at the top (see EditorBody: it only follows the caret once the field is focused).
     var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(state.content, TextRange(state.content.length)))
     }
+
+    // One body scroll state for the whole screen: EditorBody leaves composition when the preview
+    // is shown, and a remember inside it would silently reset the reader to the top on return.
+    val bodyScrollState = rememberScrollState()
 
     // One-way sync from the ViewModel: only when the text actually changed underneath the field
     // (first load, an import, another screen's edit) and never while a composition is open - that
@@ -175,6 +189,30 @@ internal fun EditorContent(
             onConfirm = { name ->
                 onAddTag(name)
                 tagDialogOpen = false
+            },
+        )
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.editor_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.editor_delete_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDelete = false
+                    onDelete()
+                }) {
+                    Text(
+                        text = stringResource(R.string.editor_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text(stringResource(R.string.dialog_cancel))
+                }
             },
         )
     }
@@ -241,7 +279,12 @@ internal fun EditorContent(
                             },
                             onClick = {
                                 menuOpen = false
-                                onDelete()
+                                if (state.trashEnabled) {
+                                    onDelete()
+                                } else {
+                                    // The trash is off: this delete is permanent and irreversible.
+                                    confirmDelete = true
+                                }
                             },
                         )
                     }
@@ -294,6 +337,7 @@ internal fun EditorContent(
                                     bodyValue = value
                                     onContentChange(value.text)
                                 },
+                                scrollState = bodyScrollState,
                             )
                         }
                     }
@@ -337,18 +381,54 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 private fun EditorBody(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
+    scrollState: ScrollState,
 ) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // The scroll belongs to this screen, not to BasicTextField's internal logic. Owning it is
+    // what makes both rules hold at once: the editor opens at the top of the note, and when the
+    // keyboard resizes the viewport the caret is re-revealed deterministically instead of the
+    // field's internal scroll position being whatever the resize left behind.
+    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var viewportHeight by remember { mutableStateOf(0) }
+    var focused by remember { mutableStateOf(false) }
+
+    // Deliberately *not* keyed on WindowInsets.ime: the Activity root consumes that inset with
+    // imePadding(), so by the time this composable reads it, it is zero and a guard on it makes
+    // the whole effect a no-op. The resize itself is the signal - with adjustResize the keyboard
+    // shrinks this viewport, which re-runs the effect with the smaller height.
+    LaunchedEffect(focused, value.selection, textLayout, viewportHeight) {
+        // Unfocused means the note is merely being read: opening it must show the top, not jump
+        // to wherever the caret happens to rest.
+        if (!focused || viewportHeight <= 0) return@LaunchedEffect
+        val layout = textLayout ?: return@LaunchedEffect
+        val cursor = value.selection.end.coerceIn(0, value.text.length)
+        val cursorRect = layout.getCursorRect(cursor)
+        val top = cursorRect.top.roundToInt()
+        val bottom = cursorRect.bottom.roundToInt()
+        // Minimal displacement: if the caret is already visible nothing scrolls, so a tap in the
+        // upper half of the viewport keeps its exact position when the keyboard opens.
+        val target = when {
+            top < scrollState.value -> top
+            bottom > scrollState.value + viewportHeight -> bottom - viewportHeight
+            else -> return@LaunchedEffect
+        }
+        scrollState.animateScrollTo(target.coerceIn(0, scrollState.maxValue))
+    }
 
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxSize()
+            .onSizeChanged { viewportHeight = it.height }
+            .verticalScroll(scrollState)
+            .onFocusChanged { focused = it.isFocused }
             .testTag(EditorTags.CONTENT),
         textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        onTextLayout = { textLayout = it },
         decorationBox = { inner ->
             if (value.text.isEmpty()) {
                 Text(

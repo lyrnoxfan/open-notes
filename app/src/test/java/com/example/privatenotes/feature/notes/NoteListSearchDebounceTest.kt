@@ -1,5 +1,6 @@
 package com.example.privatenotes.feature.notes
 
+import com.example.privatenotes.data.FakeNoteSettings
 import com.example.privatenotes.data.local.NoteEntity
 import com.example.privatenotes.data.local.NoteWithTags
 import com.example.privatenotes.data.local.TagEntity
@@ -50,7 +51,7 @@ class NoteListSearchDebounceTest {
     @Test
     fun fourKeystrokesProduceOneQuery() = runTest(dispatcher) {
         val counter = CountingRepository()
-        val viewModel = NoteListViewModel({ counter }, { NoTags })
+        val viewModel = NoteListViewModel({ counter }, { NoTags }, FakeNoteSettings())
         val job = TestScope(dispatcher).launch { viewModel.uiState.collect {} }
         advanceTimeBy(1)
 
@@ -67,7 +68,7 @@ class NoteListSearchDebounceTest {
     @Test
     fun clearingTheBoxIsImmediate() = runTest(dispatcher) {
         val counter = CountingRepository()
-        val viewModel = NoteListViewModel({ counter }, { NoTags })
+        val viewModel = NoteListViewModel({ counter }, { NoTags }, FakeNoteSettings())
         val job = TestScope(dispatcher).launch { viewModel.uiState.collect {} }
         advanceTimeBy(1)
         val beforeClear = counter.calls
@@ -128,8 +129,10 @@ class NoteListSearchDebounceTest {
         override suspend fun createNote(title: String, content: String): String = ""
         override suspend fun updateNote(id: String, title: String, content: String) = Unit
         override suspend fun moveToTrash(id: String) = Unit
+        override suspend fun moveToTrashAll(ids: List<String>) = Unit
         override suspend fun restoreFromTrash(id: String) = Unit
         override suspend fun permanentlyDelete(id: String) = Unit
+        override suspend fun deletePermanentlyAll(ids: List<String>) = Unit
         override suspend fun purgeExpiredTrash(nowMillis: Long): Int = 0
         override suspend fun activeNoteCount(): Int = 0
     }

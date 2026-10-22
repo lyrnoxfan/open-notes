@@ -61,6 +61,17 @@ class RoomNoteRepository(
         noteDao.moveToTrash(id, updatedTimestampFor(id))
     }
 
+    override suspend fun moveToTrashAll(ids: List<String>) {
+        if (ids.isEmpty()) return
+        database.withTransaction {
+            // Per-row stamping keeps the strictly-increasing updatedAt rule that §9.5 merges
+            // depend on, even though every row lands in the same transaction.
+            for (id in ids) {
+                noteDao.moveToTrash(id, updatedTimestampFor(id))
+            }
+        }
+    }
+
     override suspend fun restoreFromTrash(id: String) {
         noteDao.restoreFromTrash(id, updatedTimestampFor(id))
     }
@@ -80,6 +91,26 @@ class RoomNoteRepository(
                 ),
             )
             noteDao.deleteById(id)
+        }
+    }
+
+    override suspend fun deletePermanentlyAll(ids: List<String>) {
+        if (ids.isEmpty()) return
+        database.withTransaction {
+            for (id in ids) {
+                val note = noteDao.findById(id) ?: continue
+                markerDao.insert(
+                    DeletionMarkerEntity(
+                        noteId = note.id,
+                        // Strictly newer than the note itself: the marker must out-rank any
+                        // backup row carrying the note's own updatedAt (§9.5).
+                        deletedAt = maxOf(timeSource.nowMillis(), note.updatedAt + 1),
+                        lastKnownUpdatedAt = note.updatedAt,
+                        schemaVersion = AppDatabase.SCHEMA_VERSION,
+                    ),
+                )
+                noteDao.deleteById(note.id)
+            }
         }
     }
 

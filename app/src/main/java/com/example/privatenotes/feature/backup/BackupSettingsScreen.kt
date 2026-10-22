@@ -94,6 +94,7 @@ internal class SettingsActions(
     val onDismissImportReport: () -> Unit = {},
     val onAutoSyncChange: (Boolean) -> Unit = {},
     val onLocalRetentionChange: (Int) -> Unit = {},
+    val onTrashEnabledChange: (Boolean) -> Unit = {},
     val onListRemote: () -> Unit = {},
     val onDismissRemote: () -> Unit = {},
     val onDownloadRemote: (String, CharArray?) -> Unit = { _, _ -> },
@@ -183,6 +184,7 @@ fun BackupSettingsScreen(
         onOpenTags = onOpenTags,
         onAutoSyncChange = viewModel::setAutoSyncEnabled,
         onLocalRetentionChange = viewModel::setLocalRetention,
+        onTrashEnabledChange = viewModel::setTrashEnabled,
         onListRemote = viewModel::listRemoteBackups,
         onDismissRemote = viewModel::dismissRemoteFiles,
         onDownloadRemote = viewModel::downloadAndImport,
@@ -263,6 +265,13 @@ internal fun SettingsContent(
                 SettingsSection(title = stringResource(R.string.settings_section_lock)) {
                     lockRow()
                 }
+            }
+
+            item {
+                TrashSection(
+                    trashEnabled = state.trashEnabled,
+                    onToggle = actions.onTrashEnabledChange,
+                )
             }
 
             item {
@@ -436,6 +445,62 @@ private fun SettingsSection(
             modifier = Modifier.padding(top = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             content = content,
+        )
+    }
+}
+
+/** The trash switch: on, deletion is recoverable for 30 days; off, it is immediate and final. */
+@Composable
+private fun TrashSection(trashEnabled: Boolean, onToggle: (Boolean) -> Unit) {
+    var confirmDisable by remember { mutableStateOf(false) }
+
+    SettingsSection(title = stringResource(R.string.settings_section_trash)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.trash_settings_switch),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = trashEnabled,
+                onCheckedChange = { wanted ->
+                    if (wanted) {
+                        onToggle(true)
+                    } else {
+                        // Turning it off changes what every delete button means; say so first.
+                        confirmDisable = true
+                    }
+                },
+            )
+        }
+        SectionHint(stringResource(R.string.trash_settings_hint))
+    }
+
+    if (confirmDisable) {
+        AlertDialog(
+            onDismissRequest = { confirmDisable = false },
+            title = { Text(stringResource(R.string.trash_settings_disable_confirm_title)) },
+            text = { Text(stringResource(R.string.trash_settings_disable_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDisable = false
+                    onToggle(false)
+                }) {
+                    Text(
+                        text = stringResource(R.string.dialog_confirm),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisable = false }) {
+                    Text(stringResource(R.string.dialog_cancel))
+                }
+            },
         )
     }
 }
