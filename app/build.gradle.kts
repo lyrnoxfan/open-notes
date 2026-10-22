@@ -58,6 +58,12 @@ android {
         versionName = releaseVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The app is Chinese-only; libraries still bring translations for a few dozen locales.
+        // Keeping zh and en (for any library string that has no Chinese translation) drops the
+        // rest from resources.arsc. `resourceConfigurations` is the spelling AGP 8.7 understands;
+        // `localeFilters` only exists from 8.9.
+        resourceConfigurations += listOf("zh", "en")
     }
 
     signingConfigs {
