@@ -16,11 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
@@ -44,20 +41,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -67,9 +58,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
-import android.os.SystemClock
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -178,14 +166,12 @@ internal fun EditorContent(
         mutableStateOf(TextFieldValue(state.content))
     }
 
-    // One body scroll state for the whole screen: EditorBody leaves composition when the preview
-    // is shown, and a remember inside it would silently reset the reader to the top on return.
-    var lastViewportChange by remember { mutableLongStateOf(0L) }
-    val bodyScrollState = rememberScrollState()
-    // Scroll position before the keyboard started animating. If the field's native
-    // cursor-following pans during the animation (stale viewport geometry), the settle-aware
-    // effect restores this when the caret turns out to be visible anyway.
-    var savedScrollValue by remember { mutableIntStateOf(0) }
+    // No scroll state lives here any more. BasicTextField already scrolls itself
+    // (TextFieldScrollerPosition / textFieldScrollable inside CoreTextField) to keep the caret in
+    // view, including when the keyboard resizes the viewport. Wrapping it in our own
+    // verticalScroll() put two scroll owners on the same axis, and every "fix" after that - the
+    // settle wait, the target snapshots, the restore of the pre-animation position - was one
+    // more actor racing the native one. That race is the sub-second jump-to-bottom-and-back.
 
     // One-way sync from the ViewModel: only when the text actually changed underneath the field
     // (first load, an import, another screen's edit) and never while a composition is open - that
@@ -350,20 +336,6 @@ internal fun EditorContent(
                                     bodyValue = value
                                     onContentChange(value.text)
                                 },
-                                scrollState = bodyScrollState,
-                                onViewportChanged = {
-                                    val now = SystemClock.uptimeMillis()
-                                    // Start of a new settle period (was stable before): snapshot
-                                    // the scroll position so a phantom pan can be undone after.
-                                    if (now - lastViewportChange >= VIEWPORT_SETTLE_MS) {
-                                        savedScrollValue = bodyScrollState.value
-                                    }
-                                    lastViewportChange = now
-                                },
-                                isViewportSettling = {
-                                    SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS
-                                },
-                                savedScrollValue = { savedScrollValue },
                             )
                         }
                     }
@@ -407,109 +379,25 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 private fun EditorBody(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
-    scrollState: ScrollState,
-    onViewportChanged: () -> Unit,
-    isViewportSettling: () -> Boolean,
-    savedScrollValue: () -> Int,
 ) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // The scroll belongs to this screen, not to BasicTextField's internal logic. Owning it is
-    // what makes both rules hold at once: the editor opens at the top of the note, and when the
-    // keyboard resizes the viewport the caret is re-revealed deterministically instead of the
-    // field's internal scroll position being whatever the resize left behind.
-    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
-    var viewportHeight by remember { mutableStateOf(0) }
-    var focused by remember { mutableStateOf(false) }
-    // Scroll target currently being animated toward. Restarting animateScrollTo for the same
-    // target cancels it mid-flight and re-starts it - also a flash. Let it finish instead.
-    var activeTarget by remember { mutableStateOf<Int?>(null) }
-    // The effect below deliberately does not restart when the selection changes, so it must not
-    // read the value captured when it started either: that snapshot is stale by the time the wait
-    // ends, and a caret from before the tap is exactly how it used to compute "scroll to the end".
-    val latestValue by rememberUpdatedState(value)
-
-    // Deliberately *not* keyed on WindowInsets.ime: the Activity root consumes that inset with
-    // imePadding(), so by the time this composable reads it, it is zero and a guard on it makes
-    // the whole effect a no-op. The resize itself is the signal - with adjustResize the keyboard
-    // shrinks this viewport, which re-runs the effect with the smaller height.
+    // Scrolling belongs to BasicTextField. It keeps the caret visible on its own - on tap, on
+    // typing, and when the keyboard shrinks the viewport - so there is nothing here to fix up.
     //
-    // Deliberately *not* keyed on value.selection either: BasicTextField already follows the
-    // cursor natively on tap/type, and a second actor scrolling on every selection change fights
-    // it - that fight is the "jump to the bottom, then yanked back to the tap" bug. This effect
-    // only corrects the viewport after the keyboard settles; it reads the current selection when
-    // it runs, so it still lands on the right caret.
-    //
-    // Deliberately *not* keyed on focused: on tap, focus flips before the tap's selection lands
-    // in bodyValue, so an effect that read the selection at that moment would compute a target
-    // from the pre-tap caret. The keyboard resize always follows a tap-focus, so keying on the
-    // viewport alone still covers it - and the snapshot is re-read after the wait for the rest.
-    LaunchedEffect(textLayout, viewportHeight) {
-        // Unfocused means the note is merely being read: opening it must show the top, not jump
-        // to wherever the caret happens to rest.
-        if (!focused || viewportHeight <= 0) {
-            activeTarget = null
-            return@LaunchedEffect
-        }
-        // If the viewport moved recently the keyboard is still animating. Each new height cancels
-        // this run and starts a fresh wait, so only the settled height ever scrolls: one smooth
-        // motion instead of an animation fighting every frame.
-        while (isViewportSettling()) {
-            delay(50)
-        }
-        // Read the value *after* the wait: the tap's selection lands in bodyValue while this
-        // effect is suspended, and the effect is not keyed on it (that would fight the field's
-        // own cursor-following), so the captured `value` here is the pre-tap one.
-        val current = latestValue
-        val layout = textLayout ?: return@LaunchedEffect
-        // The layout can lag behind the text by a frame; a cursor rect from a stale layout
-        // points at the wrong place (the phantom jump-to-bottom). Skip until they agree.
-        if (layout.layoutInput.text.text != current.text) return@LaunchedEffect
-        val cursor = current.selection.end.coerceIn(0, current.text.length)
-        val cursorRect = layout.getCursorRect(cursor)
-        val top = cursorRect.top.roundToInt()
-        val bottom = cursorRect.bottom.roundToInt()
-        // Minimal displacement: if the caret is already visible nothing scrolls, so a tap in the
-        // upper half of the viewport keeps its exact position when the keyboard opens.
-        val target = when {
-            top < scrollState.value -> top
-            bottom > scrollState.value + viewportHeight -> bottom - viewportHeight
-            else -> {
-                activeTarget = null
-                // Caret is visible: if the native cursor-following panned during the keyboard
-                // animation (stale geometry), undo it by restoring the pre-animation position.
-                val saved = savedScrollValue()
-                if (scrollState.value != saved) {
-                    scrollState.scrollTo(saved)
-                }
-                return@LaunchedEffect
-            }
-        }.coerceIn(0, scrollState.maxValue)
-        if (activeTarget == target) return@LaunchedEffect
-        activeTarget = target
-        try {
-            scrollState.animateScrollTo(target)
-        } finally {
-            activeTarget = null
-        }
-    }
-
+    // "Open at the top" is a property of the caret, not of a scroll position: the field scrolls
+    // to wherever the selection is, and bodyValue starts with the selection at the document
+    // start (see EditorContent). Planting it at the end - which an earlier version did - made the
+    // field scroll to the bottom the moment it gained focus.
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxSize()
-            .onSizeChanged {
-                if (it.height != viewportHeight) onViewportChanged()
-                viewportHeight = it.height
-            }
-            .verticalScroll(scrollState)
-            .onFocusChanged { focused = it.isFocused }
             .testTag(EditorTags.CONTENT),
         textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        onTextLayout = { textLayout = it },
         decorationBox = { inner ->
             if (value.text.isEmpty()) {
                 Text(
@@ -620,8 +508,6 @@ object EditorTags {
 
 /** design.md §7: two motion durations, nothing else. */
 internal const val MOTION_MS = 150
-// How long the viewport must sit still before a scroll reacts to it.
-private const val VIEWPORT_SETTLE_MS = 200L
 
 @Composable
 private fun SaveStatus.label(): String = when (this) {
