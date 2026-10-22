@@ -57,3 +57,9 @@ apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
 4. 若第 2 步安装被拒绝（签名不一致），说明密钥换了，必须先解决再发布。
 
 这一步依赖设备，和设备测试一起执行。
+
+
+## ABI 与包体
+
+release 只打包 `arm64-v8a` 的 `libsqlcipher.so`，debug 保留 `arm64-v8a` + `x86_64`。需要在 x86
+模拟器上验收正式包时用 `./gradlew assembleRelease -PabiSet=all` 构建通用包。

@@ -176,7 +176,8 @@ API 34 模拟器），全部通过；`lint` 无问题。
 1. 用发布密钥构建 `1.0.0`（versionCode 1）并安装，新建笔记「Release / SurvivesUpgrade」。
 2. 构建 `1.0.1`（versionCode 2），`adb install -r` 覆盖安装，`firstInstallTime` 保持首次安装时间。
 3. 打开应用，笔记仍在列表中；`private_notes.db` 头 16 字节与升级前一致且仍是随机盐。
-4. APK 内含四个 ABI 的 `libsqlcipher.so`，`apksigner` 校验 v2 签名有效。
+4. release APK 只含 **arm64-v8a** 的 `libsqlcipher.so`（`-PabiSet=all` 可构建四 ABI 通用包），
+   `apksigner` 校验 v2 签名有效。
 
 未验证项写在「已知限制」里，不当作已通过。
 

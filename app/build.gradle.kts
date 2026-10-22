@@ -26,6 +26,22 @@ val envKeyPassword: String? = System.getenv("OPEN_NOTES_KEY_PASSWORD")
 val signingConfigured = listOf(envStoreFile, envStorePassword, envKeyAlias, envKeyPassword)
     .all { !it.isNullOrBlank() } && envStoreFile?.let { file(it).exists() } == true
 
+/**
+ * Which ABIs a build carries.
+ *
+ * `libsqlcipher.so` is by far the largest thing in the APK: four ABIs cost 22.5 MB of the
+ * 28.3 MB package. A personal install only ever needs arm64-v8a, so release ships that one and
+ * nothing else. Debug keeps x86_64 as well, because the emulator is x86_64 and the instrumented
+ * tests run there.
+ *
+ * `-PabiSet=all` brings back the universal package for the case the alternative exists for:
+ * checking a release build on an x86 emulator.
+ */
+val abiSet: String = (findProperty("abiSet") as String?) ?: "default"
+val releaseAbis: List<String> =
+    if (abiSet == "all") listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") else listOf("arm64-v8a")
+val debugAbis: List<String> = listOf("arm64-v8a", "x86_64")
+
 // Version identity comes from the release tag: `-PversionName=1.0.0 -PversionCode=7`.
 val releaseVersionName: String = (findProperty("versionName") as String?) ?: "0.1.0"
 val releaseVersionCode: Int = (findProperty("versionCode") as String?)?.toInt() ?: 1
@@ -62,9 +78,11 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            ndk { abiFilters += debugAbis }
         }
         release {
             isMinifyEnabled = true
+            ndk { abiFilters += releaseAbis }
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
