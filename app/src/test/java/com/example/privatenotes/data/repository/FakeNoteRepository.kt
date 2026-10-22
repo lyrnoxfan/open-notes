@@ -24,22 +24,28 @@ class FakeNoteRepository : NoteRepository {
     var failWrites: Boolean = false
     var failDeletes: Boolean = false
     var slowUpdateMillis: Long = 0
+    var slowCreateMillis: Long = 0
+    var slowLoadMillis: Long = 0
     var createCount: Int = 0
 
     private var nextId = 0
 
-    override fun observeActiveNotes(): Flow<List<NoteEntity>> = notes
+    override fun observeActiveNotes(): Flow<List<NoteEntity>> = notes.map { rows -> rows.filter { it.deletedAt == null } }
 
-    override fun observeTrash(): Flow<List<NoteEntity>> = notes
+    override fun observeTrash(): Flow<List<NoteEntity>> = notes.map { rows -> rows.filter { it.deletedAt != null } }
 
     override fun observeNotes(term: String, tagId: String?): Flow<List<NoteWithTags>> =
         notes.map { list -> list.map { NoteWithTags(it, emptyList()) } }
 
     override fun search(term: String): Flow<List<NoteEntity>> = notes
 
-    override suspend fun findById(id: String): NoteEntity? = notes.value.find { it.id == id }
+    override suspend fun findById(id: String): NoteEntity? {
+        if (slowLoadMillis > 0) delay(slowLoadMillis)
+        return notes.value.find { it.id == id }
+    }
 
     override suspend fun createNote(title: String, content: String): String {
+        if (slowCreateMillis > 0) delay(slowCreateMillis)
         if (failWrites) throw IllegalStateException("create failed")
         val id = "note-${nextId++}"
         createCount++
@@ -61,6 +67,7 @@ class FakeNoteRepository : NoteRepository {
             delay(stall)
         }
         if (failWrites) throw IllegalStateException("update failed")
+        if (notes.value.none { it.id == id && it.deletedAt == null }) throw IllegalStateException("deleted note")
         writeLog += content
         notes.value = notes.value.map {
             if (it.id == id) it.copy(title = title, content = content, updatedAt = it.updatedAt + 1) else it
@@ -69,7 +76,7 @@ class FakeNoteRepository : NoteRepository {
 
     override suspend fun moveToTrash(id: String) {
         if (failDeletes) throw IllegalStateException("delete failed")
-        notes.value = notes.value.filterNot { it.id == id }
+        notes.value = notes.value.map { if (it.id == id) it.copy(deletedAt = it.updatedAt + 1, updatedAt = it.updatedAt + 1) else it }
     }
 
     override suspend fun moveToTrashAll(ids: List<String>) {
@@ -77,7 +84,9 @@ class FakeNoteRepository : NoteRepository {
         ids.forEach { moveToTrash(it) }
     }
 
-    override suspend fun restoreFromTrash(id: String) = Unit
+    override suspend fun restoreFromTrash(id: String) {
+        notes.value = notes.value.map { if (it.id == id) it.copy(deletedAt = null, updatedAt = it.updatedAt + 1) else it }
+    }
 
     override suspend fun permanentlyDelete(id: String) {
         if (failDeletes) throw IllegalStateException("delete failed")

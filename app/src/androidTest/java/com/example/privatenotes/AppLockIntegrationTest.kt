@@ -17,6 +17,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Rule
@@ -113,6 +114,22 @@ class AppLockIntegrationTest {
         val reopened = app.container.noteRepository.findById(id)
         assertNotNull("the key still opens the file after the lock closed it", reopened)
         assertEquals("写下的内容", reopened!!.content)
+    }
+
+    @Test
+    fun aRetiredDaoCannotReopenTheDatabaseAfterLockClose() = runBlocking {
+        val oldDatabase = app.container.database
+        val oldRepository = app.container.noteRepository
+        val id = oldRepository.createNote("关闭后不能复活连接", "新连接仍应读到已保存数据")
+        app.container.closeDatabase()
+        // Wait for the actual async close, not only the detached container reference.
+        val deadline = SystemClock.elapsedRealtime() + 10_000
+        while (oldDatabase.isOpen && SystemClock.elapsedRealtime() < deadline) Thread.sleep(10)
+        assertFalse("the retired handle must finish closing", oldDatabase.isOpen)
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { oldRepository.findById(id) }
+        }
+        assertEquals("新连接仍应读到已保存数据", app.container.noteRepository.findById(id)!!.content)
     }
 
     private fun awaitState(expected: AppLockState, timeoutMillis: Long = 5_000) {

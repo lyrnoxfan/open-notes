@@ -1,6 +1,8 @@
 package com.example.privatenotes.security
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertArrayEquals
@@ -16,8 +18,14 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class KeyManagerInstrumentedTest {
 
-    private val context: Context
-        get() = InstrumentationRegistry.getInstrumentation().targetContext
+    // This process also hosts the live app. Never clear/replace its wrapped database key.
+    private val context: Context by lazy {
+        object : ContextWrapper(InstrumentationRegistry.getInstrumentation().targetContext) {
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                super.getSharedPreferences("key-manager-test-$name", mode)
+        }
+    }
 
     private fun store() = SharedPreferencesWrappedKeyStore(context)
 

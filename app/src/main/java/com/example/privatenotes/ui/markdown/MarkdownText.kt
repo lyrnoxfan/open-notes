@@ -68,6 +68,16 @@ fun MarkdownText(
         Markwon.builder(context)
             .usePlugin(
                 object : io.noties.markwon.AbstractMarkwonPlugin() {
+                    override fun configureConfiguration(builder: io.noties.markwon.MarkwonConfiguration.Builder) {
+                        val delegate = io.noties.markwon.LinkResolverDef()
+                        builder.linkResolver { view, link ->
+                            if (MarkdownLinks.isAllowed(link)) {
+                                // Missing/denied handlers must not crash a private preview.
+                                try { delegate.resolve(view, link) } catch (_: SecurityException) { }
+                            }
+                        }
+                    }
+
                     override fun configureTheme(builder: MarkwonTheme.Builder) {
                         builder
                             .headingTypeface(serifBold)

@@ -8,6 +8,23 @@ import org.junit.Test
 class WebDavPropfindParserTest {
 
     @Test
+    fun malformedEscapesDoNotHideOtherValidBackups() {
+        val xml = """<multistatus xmlns="DAV:">
+            <response><href>/dav/private-notes-%ZZ.json</href></response>
+            <response><href>/dav/private-notes-20261021-120000.pnb</href></response>
+        </multistatus>"""
+        assertEquals("private-notes-20261021-120000.pnb", parsePropfindFileList(xml).single().fileName)
+    }
+
+    @Test
+    fun aLiteralPlusInAPathIsNotDecodedAsASpace() {
+        val xml = """<multistatus xmlns="DAV:">
+            <response><href>/dav/private-notes-20261021+120000.pnb</href></response>
+        </multistatus>"""
+        assertEquals("private-notes-20261021+120000.pnb", parsePropfindFileList(xml).single().fileName)
+    }
+
+    @Test
     fun findsOnlyBackupFilesNewestFirst() {
         val xml = """
             <?xml version="1.0" encoding="utf-8"?>

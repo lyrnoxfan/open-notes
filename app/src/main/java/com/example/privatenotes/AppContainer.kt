@@ -74,6 +74,9 @@ class AppContainer(context: Context) {
     @Volatile
     private var databaseInstance: AppDatabase? = null
 
+    private class DatabaseLease { @Volatile var retired = false }
+    private var databaseLease: DatabaseLease? = null
+
     /**
      * The open database, or a freshly opened one.
      *
@@ -91,8 +94,16 @@ class AppContainer(context: Context) {
             checkUnlocked()
             return databaseInstance ?: synchronized(databaseLock) {
                 checkUnlocked()
-                databaseInstance ?: EncryptedDatabaseProvider.open(appContext, keyManager)
-                    .also { databaseInstance = it }
+                databaseInstance ?: run {
+                    val lease = DatabaseLease()
+                    EncryptedDatabaseProvider.open(appContext, keyManager, onOpenCheck = {
+                        check(!lease.retired) { "database connection has been retired" }
+                        checkUnlocked()
+                    }).also {
+                        databaseLease = lease
+                        databaseInstance = it
+                    }
+                }
             }
         }
 
@@ -129,6 +140,10 @@ class AppContainer(context: Context) {
      */
     fun closeDatabase() {
         val closing = synchronized(databaseLock) {
+            // Room.close() is not terminal: a stale DAO can automatically open it again.
+            // Retire the lease synchronously so old list flows cannot resurrect the connection.
+            databaseLease?.retired = true
+            databaseLease = null
             databaseInstance.also { databaseInstance = null }
         } ?: return
 

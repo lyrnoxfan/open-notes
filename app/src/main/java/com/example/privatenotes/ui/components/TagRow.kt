@@ -71,7 +71,7 @@ fun TagFilterRow(
                 selected = selected,
                 onClick = { onSelect(tag) },
                 label = { Text(tag, style = MaterialTheme.typography.labelMedium) },
-                shape = MaterialTheme.shapes.small,
+                shape = androidx.compose.foundation.shape.CircleShape,
                 colors = FilterChipDefaults.filterChipColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     labelColor = MaterialTheme.colorScheme.onSurfaceVariant,

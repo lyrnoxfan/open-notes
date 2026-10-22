@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Mirrors DesignTokens.Light; the launch window must match the Compose background. -->
-    <color name="window_background">#F1E7DA</color>
-    <color name="ic_launcher_background">#A13F04</color>
+    <color name="window_background">#F7F6F2</color>
+    <color name="ic_launcher_background">#668575</color>
 </resources>

@@ -2,6 +2,9 @@ package com.example.privatenotes
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
@@ -11,6 +14,7 @@ import com.example.privatenotes.feature.notes.EditorTags
 import com.example.privatenotes.feature.notes.NoteListTags
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.room.withTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -37,7 +41,13 @@ class EditorAutoSaveTest {
 
     @Before
     fun clearNotes() = runBlocking {
-        container.database.clearAllTables()
+        // Use Room's suspend transaction path; SQLCipher clearAllTables can race invalidation.
+        container.database.withTransaction {
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM note_tag_refs")
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM notes")
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM tags")
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM deletion_markers")
+        }
     }
 
     @Test
@@ -94,6 +104,32 @@ class EditorAutoSaveTest {
 
         assertTrue(runBlocking { repository.observeActiveNotes().first().isEmpty() })
         assertEquals(noteId, runBlocking { repository.observeTrash().first().single().id })
+    }
+
+    @Test
+    fun backgroundingImmediatelyFlushesTheDraft() {
+        composeRule.onNodeWithTag(NoteListTags.CREATE).performClick()
+        composeRule.onNodeWithTag(EditorTags.CONTENT).performTextInput("切到后台也不能丢失末尾")
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        composeRule.waitUntil(timeoutMillis = WAIT_TIMEOUT) {
+            runBlocking { repository.observeActiveNotes().first().any { it.content == "切到后台也不能丢失末尾" } }
+        }
+        composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        assertEquals("切到后台也不能丢失末尾", runBlocking { repository.observeActiveNotes().first().single().content })
+    }
+
+    @Test
+    fun editorDeleteKeepsTheLatestDraftRestorable() {
+        composeRule.onNodeWithTag(NoteListTags.CREATE).performClick()
+        composeRule.onNodeWithTag(EditorTags.CONTENT).performTextInput("删除前的最后几个字")
+        composeRule.onNodeWithContentDescription(composeRule.activity.getString(R.string.editor_more)).performClick()
+        composeRule.onNodeWithText(composeRule.activity.getString(R.string.editor_delete)).performClick()
+        composeRule.waitUntil(timeoutMillis = WAIT_TIMEOUT) {
+            runBlocking { repository.observeTrash().first().any { it.content == "删除前的最后几个字" } }
+        }
+        val trashed = runBlocking { repository.observeTrash().first().first { it.content == "删除前的最后几个字" } }
+        runBlocking { repository.restoreFromTrash(trashed.id) }
+        assertEquals("删除前的最后几个字", runBlocking { repository.findById(trashed.id) }!!.content)
     }
 
     private companion object {

@@ -19,8 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import com.example.privatenotes.ui.components.NoteButton as Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -253,10 +252,6 @@ fun LockScreen(
             if (available == null) {
                 Button(
                     onClick = { context.openSecuritySettings() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
                 ) {
                     Text(stringResource(R.string.lock_open_security_settings))
                 }
@@ -264,10 +259,6 @@ fun LockScreen(
                 Button(
                     onClick = { startAuthentication() },
                     enabled = !authenticating,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
                 ) {
                     Text(stringResource(R.string.lock_unlock))
                 }

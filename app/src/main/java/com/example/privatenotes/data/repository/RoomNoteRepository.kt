@@ -44,11 +44,14 @@ class RoomNoteRepository(
         return id
     }
 
-    override suspend fun updateNote(id: String, title: String, content: String) {
+    override suspend fun updateNote(id: String, title: String, content: String) = database.withTransaction {
         val existing = noteDao.findById(id)
         // The note may have been deleted while an editor still held unsaved input; a stale
         // write must not resurrect it.
-        if (existing == null || existing.deletedAt != null) return
+        if (existing == null || existing.deletedAt != null) {
+            // A no-op must not be reported by the editor as a successful save.
+            throw IllegalStateException("笔记已被删除，无法保存；当前输入仍保留在编辑器中")
+        }
 
         // Strictly increasing timestamps keep "newest edit wins" meaningful for §9.5 merges,
         // even when the device clock steps backwards.
@@ -57,7 +60,7 @@ class RoomNoteRepository(
         noteDao.update(existing.copy(title = title, content = content, updatedAt = updatedAt))
     }
 
-    override suspend fun moveToTrash(id: String) {
+    override suspend fun moveToTrash(id: String) = database.withTransaction {
         noteDao.moveToTrash(id, updatedTimestampFor(id))
     }
 
@@ -72,7 +75,7 @@ class RoomNoteRepository(
         }
     }
 
-    override suspend fun restoreFromTrash(id: String) {
+    override suspend fun restoreFromTrash(id: String) = database.withTransaction {
         noteDao.restoreFromTrash(id, updatedTimestampFor(id))
     }
 

@@ -1,6 +1,8 @@
 package com.example.privatenotes.data.local
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.privatenotes.security.AndroidKeystoreSecretCipher
@@ -29,12 +31,23 @@ import java.util.UUID
 class KeyLossTest {
 
     private val context: Context
-        get() = InstrumentationRegistry.getInstrumentation().targetContext
+        get() = isolatedContext
+
+    // Real Keystore and real persisted wrapped keys, but never the live app's prefs/database.
+    private val isolatedContext: Context by lazy {
+        object : ContextWrapper(InstrumentationRegistry.getInstrumentation().targetContext) {
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+                super.getSharedPreferences("key-loss-test-$name", mode)
+        }
+    }
+
+    private val TEST_DATABASE = "key-loss-contract-test.db"
 
     private val passphrase = ByteArray(32) { (it + 7).toByte() }
 
     private val databaseFile: File
-        get() = context.getDatabasePath(AppDatabase.NAME)
+        get() = context.getDatabasePath(TEST_DATABASE)
 
     private fun realKeyManager() = DatabaseKeyManager(
         store = SharedPreferencesWrappedKeyStore(context),
@@ -43,19 +56,19 @@ class KeyLossTest {
 
     @Before
     fun cleanBefore() {
-        context.deleteDatabase(AppDatabase.NAME)
+        context.deleteDatabase(TEST_DATABASE)
         databaseFile.parentFile?.mkdirs()
         SharedPreferencesWrappedKeyStore(context).clear()
     }
 
     @After
     fun cleanAfter() {
-        context.deleteDatabase(AppDatabase.NAME)
+        context.deleteDatabase(TEST_DATABASE)
         SharedPreferencesWrappedKeyStore(context).clear()
     }
 
     private fun seedDatabase() {
-        val database = EncryptedDatabaseProvider.openWithPassphrase(context, passphrase)
+        val database = EncryptedDatabaseProvider.openWithPassphrase(context, passphrase, TEST_DATABASE)
         try {
             runBlocking {
                 database.noteDao().insert(
@@ -82,7 +95,7 @@ class KeyLossTest {
         SharedPreferencesWrappedKeyStore(context).clear()
 
         val error = assertThrows(DatabaseKeyException.KeyUnavailable::class.java) {
-            EncryptedDatabaseProvider.open(context, realKeyManager())
+            EncryptedDatabaseProvider.open(context, realKeyManager(), TEST_DATABASE)
         }
 
         assertTrue(
@@ -98,7 +111,7 @@ class KeyLossTest {
 
     @Test
     fun aFreshInstallWithoutAKeyCreatesOneEncryptedDatabase() {
-        val database = EncryptedDatabaseProvider.open(context, realKeyManager())
+        val database = EncryptedDatabaseProvider.open(context, realKeyManager(), TEST_DATABASE)
         val count = try {
             runBlocking { database.noteDao().countActive() }
         } finally {

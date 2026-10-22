@@ -17,6 +17,7 @@ COLOR_KT = pathlib.Path(__file__).resolve().parents[1] / (
 
 # (foreground, background, purpose, required ratio)
 PAIRS = [
+    ("onAction", "action", "主按钮文字 / 鼠尾草底", 4.5),
     ("textPrimary", "background", "正文 / 页面底色", 7.0),
     ("textPrimary", "surface", "正文 / 卡片底", 7.0),
     ("textPrimary", "surfaceMuted", "正文 / 弱底", 7.0),

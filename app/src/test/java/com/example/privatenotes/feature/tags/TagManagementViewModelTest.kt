@@ -1,6 +1,8 @@
 package com.example.privatenotes.feature.tags
 
 import android.content.Context
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.privatenotes.data.local.AppDatabase
@@ -12,7 +14,9 @@ import com.example.privatenotes.data.repository.TimeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -45,6 +49,9 @@ class TagManagementViewModelTest {
     private lateinit var notes: NoteRepository
     private lateinit var tags: TagRepository
     private var clock = 1_000L
+    private val viewModels = mutableListOf<TagManagementViewModel>()
+    private val stores = mutableListOf<ViewModelStore>()
+    private val observationScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
 
     @Before
     fun setUp() {
@@ -61,14 +68,22 @@ class TagManagementViewModelTest {
 
     @After
     fun tearDown() {
-        collector?.cancel()
+        // Cancel and JOIN all real Room-flow readers before changing Dispatchers.Main.
+        // cancel() alone races resetMain when WhileSubscribed processes its final subscriber.
+        runBlocking {
+            observationScope.coroutineContext[Job]!!.cancelAndJoin()
+            stores.forEach { it.clear() }
+            viewModels.forEach { it.viewModelScope.coroutineContext[Job]!!.join() }
+        }
         database.close()
         Dispatchers.resetMain()
     }
 
     /** Starts collecting, which is what makes the WhileSubscribed state flow hot. */
     private fun observe(viewModel: TagManagementViewModel) {
-        collector = GlobalScope.launch { viewModel.uiState.collect {} }
+        viewModels += viewModel
+        stores += ViewModelStore().also { it.put("tags", viewModel) }
+        collector = observationScope.launch { viewModel.uiState.collect {} }
     }
 
     private var collector: Job? = null

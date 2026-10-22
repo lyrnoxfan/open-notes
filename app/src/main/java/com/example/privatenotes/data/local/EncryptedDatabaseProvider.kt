@@ -9,6 +9,8 @@ import com.example.privatenotes.security.DatabaseFileGuard
 import com.example.privatenotes.security.DatabaseKeyException
 import com.example.privatenotes.security.DatabaseKeyManager
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
+import net.zetetic.database.sqlcipher.SQLiteDatabaseHook
+import net.zetetic.database.sqlcipher.SQLiteConnection
 
 /**
  * The single gate through which [AppDatabase] may be built.
@@ -31,6 +33,7 @@ object EncryptedDatabaseProvider {
         context: Context,
         keyManager: DatabaseKeyManager,
         fileName: String = AppDatabase.NAME,
+        onOpenCheck: () -> Unit = {},
     ): AppDatabase {
         val appContext = context.applicationContext
         val databaseFile = appContext.getDatabasePath(fileName)
@@ -44,7 +47,7 @@ object EncryptedDatabaseProvider {
             )
         }
 
-        return openWithPassphrase(appContext, keyManager.passphrase(), fileName)
+        return openWithPassphrase(appContext, keyManager.passphrase(), fileName, onOpenCheck)
     }
 
     /** Opens the database with an explicit passphrase. Used by tests and by the open path above. */
@@ -52,6 +55,7 @@ object EncryptedDatabaseProvider {
         context: Context,
         passphrase: ByteArray,
         fileName: String = AppDatabase.NAME,
+        onOpenCheck: () -> Unit = {},
     ): AppDatabase {
         require(passphrase.isNotEmpty()) { "SQLCipher passphrase must not be empty" }
 
@@ -62,7 +66,11 @@ object EncryptedDatabaseProvider {
         DatabaseFileGuard.requireNoPlaintextDatabase(databaseFile)
 
         // A private copy: the factory may keep or clear this array; the caller keeps its own.
-        val factory = SupportOpenHelperFactory(passphrase.copyOf(), null, false)
+        val factory = SupportOpenHelperFactory(passphrase.copyOf(), object : SQLiteDatabaseHook {
+            // Run before Room can initialize invalidation tracking or take any SQLite locks.
+            override fun preKey(connection: SQLiteConnection) = onOpenCheck()
+            override fun postKey(connection: SQLiteConnection) = Unit
+        }, false)
 
         return Room.databaseBuilder(appContext, AppDatabase::class.java, fileName)
             .openHelperFactory(factory)
@@ -75,6 +83,9 @@ object EncryptedDatabaseProvider {
                     }
 
                     override fun onOpen(db: SupportSQLiteDatabase) {
+                        // A cached DAO can reopen its Room handle after close(). Reject handles
+                        // retired by the app lock before any query can read through them.
+                        onOpenCheck()
                         DatabaseFileGuard.requireEncryptedDatabase(databaseFile)
                     }
                 },

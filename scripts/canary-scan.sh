@@ -71,7 +71,10 @@ note "3/6 pull the private directory"
   > "$OUT/private.tar" || true
 if [ -s "$OUT/private.tar" ]; then
   tar xf "$OUT/private.tar" -C "$OUT/private" 2>/dev/null || true
-  ok "pulled $(find "$OUT/private" -type f | wc -l | tr -d ' ') files, $(du -sk "$OUT/private" | cut -f1) KB"
+  pulled_files=$(find "$OUT/private" -type f | wc -l | tr -d ' ')
+  if [ "$pulled_files" -eq 0 ]; then bad "private archive contained no files"; else
+    ok "pulled $pulled_files files, $(du -sk "$OUT/private" | cut -f1) KB"
+  fi
 else
   bad "could not pull the private directory"
 fi
@@ -145,7 +148,7 @@ sys.exit(0 if any(n in blob for n in (b"CANARY-", "冥王星".encode("utf-8"), "
 PYENC
   then bad "the encrypted export contains a canary in the clear"; else ok "encrypted export is opaque"; fi
 else
-  info "no encrypted export pulled; skipping its check"
+  bad "required encrypted export was not pulled"
 fi
 
 if [ -f "$RELEASE_APK" ] && [ -x "$AAPT2" ]; then

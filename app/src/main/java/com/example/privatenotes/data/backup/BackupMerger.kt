@@ -239,12 +239,6 @@ internal object MergePlanner {
 
         // 3. Notes.
         for (note in backup.notes.sortedBy { it.id }) {
-            if (note.id in notesToDelete) {
-                // The local copy was just removed by a tombstone; the backup row is the older
-                // version that marker is protecting against.
-                blockedNotes++
-                continue
-            }
             val tombstone = effectiveMarkers[note.id]
             if (tombstone != null && note.updatedAt <= tombstone.deletedAt) {
                 blockedNotes++
@@ -305,10 +299,6 @@ internal object MergePlanner {
         }
 
         for (ref in backup.noteTags.sortedWith(compareBy({ it.noteId }, { it.tagId }))) {
-            if (ref.noteId in notesToDelete) {
-                skippedNoteTags++
-                continue
-            }
             if (ref.noteId !in finalNotes) {
                 skippedNoteTags++
                 continue

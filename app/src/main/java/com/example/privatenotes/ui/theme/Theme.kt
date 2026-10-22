@@ -5,6 +5,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
+
+/** Separate sage action fills from the darker accessible link green. */
+val LocalAttentionColor = staticCompositionLocalOf { DesignTokens.Light.attention }
+val LocalActionColors = staticCompositionLocalOf { DesignTokens.Light.action to DesignTokens.Light.onAction }
 
 private val LightColors = lightColorScheme(
     primary = DesignTokens.Light.accent,
@@ -15,7 +22,9 @@ private val LightColors = lightColorScheme(
     onSecondary = DesignTokens.Light.onAccent,
     secondaryContainer = DesignTokens.Light.surfaceMuted,
     onSecondaryContainer = DesignTokens.Light.textPrimary,
-    tertiary = DesignTokens.Light.accent,
+    tertiary = DesignTokens.Light.error,
+    tertiaryContainer = Color(0xFFF3DDD5),
+    onTertiaryContainer = DesignTokens.Light.error,
     onTertiary = DesignTokens.Light.onAccent,
     background = DesignTokens.Light.background,
     onBackground = DesignTokens.Light.textPrimary,
@@ -54,7 +63,9 @@ private val DarkColors = darkColorScheme(
     onSecondary = DesignTokens.Dark.onAccent,
     secondaryContainer = DesignTokens.Dark.surfaceMuted,
     onSecondaryContainer = DesignTokens.Dark.textPrimary,
-    tertiary = DesignTokens.Dark.accent,
+    tertiary = DesignTokens.Dark.error,
+    tertiaryContainer = Color(0xFF51372D),
+    onTertiaryContainer = DesignTokens.Dark.error,
     onTertiary = DesignTokens.Dark.onAccent,
     background = DesignTokens.Dark.background,
     onBackground = DesignTokens.Dark.textPrimary,
@@ -95,10 +106,16 @@ fun PrivateNotesTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = PrivateNotesTypography,
-        shapes = PrivateNotesShapes,
-        content = content,
-    )
+    val tokens = if (darkTheme) DesignTokens.Dark else DesignTokens.Light
+    CompositionLocalProvider(
+        LocalActionColors provides (tokens.action to tokens.onAction),
+        LocalAttentionColor provides tokens.attention,
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            typography = PrivateNotesTypography,
+            shapes = PrivateNotesShapes,
+            content = content,
+        )
+    }
 }

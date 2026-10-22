@@ -49,6 +49,13 @@ class WebDavClientTest {
     }
 
     @Test
+    fun `chunked PROPFIND responses are bounded as well as backup files`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(207).setChunkedBody("x".repeat(4 * 1024 * 1024 + 1), 8192))
+        val failure = assertThrows(BackupException::class.java) { runBlocking { client().listBackups() } }
+        assertEquals(BackupErrorKind.INVALID_FORMAT, failure.kind)
+    }
+
+    @Test
     fun `connection test creates a missing collection and uses basic auth`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(404))
         server.enqueue(MockResponse().setResponseCode(201))

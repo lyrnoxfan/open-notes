@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -199,11 +200,13 @@ class RoomNoteRepositoryTest {
     }
 
     @Test
-    fun `updating a trashed note does nothing`() = runBlocking {
+    fun `updating a trashed note reports failure without resurrecting it`() = runBlocking {
         val id = repository.createNote("t", "c")
         repository.moveToTrash(id)
 
-        repository.updateNote(id, "resurrected", "body")
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { repository.updateNote(id, "resurrected", "body") }
+        }
 
         val note = repository.findById(id)!!
         assertEquals("t", note.title)
@@ -211,8 +214,10 @@ class RoomNoteRepositoryTest {
     }
 
     @Test
-    fun `updating a missing note does nothing instead of creating one`() = runBlocking {
-        repository.updateNote("missing-id", "t", "c")
+    fun `updating a missing note reports failure instead of creating one`() = runBlocking {
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { repository.updateNote("missing-id", "t", "c") }
+        }
 
         assertNull(repository.findById("missing-id"))
         assertEquals(0, repository.activeNoteCount())

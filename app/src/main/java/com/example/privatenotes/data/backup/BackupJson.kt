@@ -47,7 +47,14 @@ class BackupJson(
                 "Backup file is larger than ${BackupLimits.MAX_FILE_BYTES} bytes",
             )
         }
-        val text = String(stripBom(bytes), Charsets.UTF_8)
+        val text = try {
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(stripBom(bytes))).toString()
+        } catch (failure: java.nio.charset.CharacterCodingException) {
+            throw BackupException(BackupErrorKind.INVALID_FORMAT, "Backup is not valid UTF-8", failure)
+        }
         val document = try {
             json.decodeFromString(BackupDocument.serializer(), text)
         } catch (e: SerializationException) {
