@@ -93,6 +93,7 @@
 | `f0cd5bf` | 大字号码适配 + 动效统一 |
 | `2d390e4` | 界面拆成 state/content + 20 个预览 |
 | `1f6104f` | 对比度脚本跟进 DesignScheme |
+| `98cfda1` | 锁定时拒绝打开数据库（设备测试暴露的既存竞态） |
 
 每个提交前都跑过 `./gradlew testDebugUnitTest lint assembleDebug`，全绿。
 
@@ -164,7 +165,19 @@
 | **编辑 ↔ 预览正文不跳位** | 通过，实测两端文本原点均为 **x=66, y=562** |
 | FLAG_SECURE | 仍然开启：`screencap` 取不到画面（0 字节），没有为截图关掉它 |
 
-设备测试套件（`connectedDebugAndroidTest`）另跑，结果见最后一节。
+设备测试套件：`connectedDebugAndroidTest` **31/31 通过**（`TEST-opennotes(AVD) - 14-_app-.xml`，
+failures 0 / errors 0）。
+
+### 顺手修掉的一个既存缺陷
+
+第一次跑设备套件时 `AppLockIntegrationTest.returningAfterMoreThan30SecondsRequiresAuthentication`
+稳定失败在 `assertFalse(isDatabaseOpen)`：锁屏确实关掉了数据库，但随后又被重新打开。
+入口只有一个 —— `AppContainer.database`：锁定落下时仍在运行的读取（列表查询的
+`WhileSubscribed` 窗口、刚好启动的备份 worker）会从那里把连接再开一次。
+
+重做界面让首帧变慢，把这个偶发竞态变成了必现，所以它是在这次改动里被发现的。
+修法是在那个唯一入口加守卫（取连接前查一次、进入开连接的临界区再查一次）：锁定时拒绝打开。
+解锁后的行为不变，仍然是懒打开、解锁后重开。修复后该类测试通过，完整套件 31/31 绿。
 
 ## 5. 跳过的项
 
