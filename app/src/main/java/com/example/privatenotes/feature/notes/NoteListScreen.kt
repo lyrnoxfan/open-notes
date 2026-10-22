@@ -508,7 +508,6 @@ object NoteListTags {
     const val CREATE = "note_list_create"
     const val TRASH = "note_list_trash"
     const val SEARCH = "note_list_search"
-    const val MORE = "note_list_more"
     const val SETTINGS = "note_list_settings"
 }
 

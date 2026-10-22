@@ -204,6 +204,7 @@ class WebDavClient(
     }
 
     override suspend fun download(fileName: String): ByteArray {
+        requireSafeFileName(fileName)
         val request = authorized(Request.Builder().url(fileUrl(fileName)).get())
         val response = execute(request)
         return response.use {

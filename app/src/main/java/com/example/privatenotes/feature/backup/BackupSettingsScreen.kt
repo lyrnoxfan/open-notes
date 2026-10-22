@@ -24,6 +24,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -47,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -213,8 +216,8 @@ internal fun SettingsContent(
                     )
                 },
                 navigationIcon = {
-                    androidx.compose.material3.IconButton(onClick = onBack) {
-                        androidx.compose.material3.Icon(
+                    IconButton(onClick = onBack) {
+                        Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = stringResource(R.string.backup_back),
                         )
@@ -429,7 +432,7 @@ private fun SettingsSection(
 private fun RetentionChoice(label: String, selected: Boolean, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
-        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+        colors = ButtonDefaults.textButtonColors(
             contentColor = if (selected) {
                 MaterialTheme.colorScheme.onPrimaryContainer
             } else {
@@ -438,7 +441,7 @@ private fun RetentionChoice(label: String, selected: Boolean, onClick: () -> Uni
             containerColor = if (selected) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                androidx.compose.ui.graphics.Color.Transparent
+                Color.Transparent
             },
         ),
     ) {

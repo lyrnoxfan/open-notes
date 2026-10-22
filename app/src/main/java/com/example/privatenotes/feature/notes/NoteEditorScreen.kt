@@ -87,8 +87,6 @@ fun NoteEditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var menuOpen by remember { mutableStateOf(false) }
-    var tagDialogOpen by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // §7.1: leaving the editor must not drop the last keystrokes, and neither must going to
