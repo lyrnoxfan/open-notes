@@ -79,6 +79,22 @@
     <string name="app_lock_settings_unavailable">设备未设置锁屏密码，无法开启应用锁。</string>
     <!-- 备份与恢复 -->
     <string name="backup_title">设置</string>
+    <string name="backup_auto_sync_title">写完自动同步</string>
+    <string name="backup_auto_sync_hint">每篇文章保存后几秒内，把一份完整备份上传到 WebDAV。需要已配置 WebDAV；同步用的是明文备份（与每日自动备份一致）。</string>
+    <string name="backup_restore_title">从 WebDAV 恢复</string>
+    <string name="backup_restore_hint">列出服务器上的备份，选一份合并回本机。合并规则与本地导入完全相同。</string>
+    <string name="backup_restore_pick">选择服务器上的备份</string>
+    <string name="backup_restore_empty">服务器上还没有备份。</string>
+    <string name="backup_restore_confirm">下载并合并</string>
+    <string name="backup_restore_encrypted">加密</string>
+    <string name="backup_restore_password_title">这份备份已加密</string>
+    <string name="backup_restore_password_body">输入导出时设置的密码，才能合并。</string>
+    <string name="backup_retention_title">保留多少份本地备份</string>
+    <string name="backup_retention_hint">每一份备份都包含全部笔记；这里限制的是保留多少份历史文件。</string>
+    <string name="backup_retention_30">30 份</string>
+    <string name="backup_retention_90">90 份</string>
+    <string name="backup_retention_all">全部保留</string>
+    <string name="backup_retention_current">当前：%1$s</string>
     <string name="backup_back">返回</string>
     <string name="settings_section_lock">应用锁</string>
     <string name="settings_section_status">备份状态</string>

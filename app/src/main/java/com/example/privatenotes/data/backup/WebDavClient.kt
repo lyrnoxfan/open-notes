@@ -30,7 +30,21 @@ interface WebDavRemote {
     suspend fun upload(fileName: String, bytes: ByteArray, contentType: MediaType): WebDavUploadResult
     suspend fun verify(fileName: String, expected: ByteArray): WebDavVerification
     suspend fun deleteQuietly(fileName: String)
+
+    /** Backup files already in the configured collection, newest name first. */
+    suspend fun listBackups(): List<WebDavRemoteFile>
+
+    /** Reads one of those files back, for restoring on another install or from a fresh start. */
+    suspend fun download(fileName: String): ByteArray
 }
+
+/** One backup file found on the server. */
+data class WebDavRemoteFile(
+    val fileName: String,
+    val sizeBytes: Long,
+    /** `getlastmodified` in epoch milliseconds, when the server reports it. */
+    val lastModifiedAt: Long? = null,
+)
 
 class WebDavClient(
     private val http: OkHttpClient,
@@ -180,14 +194,32 @@ class WebDavClient(
         }
     }
 
-    private suspend fun propfind(url: HttpUrl): Response {
+    override suspend fun listBackups(): List<WebDavRemoteFile> {
+        val response = propfind(directoryUrl(), depth = 1)
+        val xml = response.use {
+            if (!it.isSuccessful) throw statusFailure(it.code, "list the backup directory")
+            readBodyText(it)
+        }
+        return parsePropfindFileList(xml)
+    }
+
+    override suspend fun download(fileName: String): ByteArray {
+        val request = authorized(Request.Builder().url(fileUrl(fileName)).get())
+        val response = execute(request)
+        return response.use {
+            if (!it.isSuccessful) throw statusFailure(it.code, "download $fileName")
+            it.body?.bytes() ?: throw storageFailure("WebDAV returned an empty file")
+        }
+    }
+
+    private suspend fun propfind(url: HttpUrl, depth: Int = 0): Response {
         val body = """<?xml version="1.0" encoding="utf-8"?>
             |<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/></d:prop></d:propfind>
         """.trimMargin()
         val request = authorized(
             Request.Builder()
                 .url(url)
-                .header("Depth", "0")
+                .header("Depth", depth.toString())
                 .header("Content-Type", "application/xml; charset=utf-8")
                 .method("PROPFIND", body.toRequestBody(XML_MEDIA_TYPE)),
         )
@@ -289,8 +321,6 @@ class WebDavClient(
         private const val HTTP_CONFLICT = 409
         private const val USER_AGENT = "open-notes-backup/1.0"
         private val XML_MEDIA_TYPE: MediaType = "application/xml; charset=utf-8".toMediaType()
-        private val CONTENT_LENGTH_REGEX =
-            Regex("""(?is)<(?:[a-z0-9]+:)?getcontentlength[^>]*>\s*(\d+)\s*<""")
 
         fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
             .followRedirects(false)
@@ -363,3 +393,42 @@ object WebDavConfigValidator {
 }
 
 private fun sha256(bytes: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(bytes)
+
+/**
+ * Extracts our backup files from a `Depth: 1` PROPFIND response.
+ *
+ * Kept as a pure function so the parsing can be tested without a server. Only names that look like
+ * a backup are kept: a WebDAV collection is often shared with other things (a desktop sync client
+ * directory, for instance), and offering every file in it for restore would be misleading.
+ */
+/** Namespace-agnostic: servers use d:, D:, or no prefix at all. */
+private val CONTENT_LENGTH_REGEX = Regex("""(?is)<(?:[a-z0-9]+:)?getcontentlength[^>]*>\s*(\d+)\s*<""")
+
+internal fun parsePropfindFileList(xml: String, nowMillis: Long = System.currentTimeMillis()): List<WebDavRemoteFile> {
+    val entries = mutableListOf<WebDavRemoteFile>()
+    val responseBlocks = xml.split("<d:response", "<D:response", ignoreCase = true)
+    for (block in responseBlocks.drop(1)) {
+        val href = HREF_REGEX.find(block)?.groupValues?.getOrNull(1) ?: continue
+        // java.net.URLDecoder, not android.net.Uri: this parser is also unit-tested on the JVM
+        // without Robolectric, where android.net.Uri is unavailable.
+        val decoded = java.net.URLDecoder.decode(href.substringAfterLast('/'), Charsets.UTF_8.name())
+        if (!BackupFileNames.isBackupFile(decoded)) continue
+        val size = CONTENT_LENGTH_REGEX.find(block)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
+        val modified = LAST_MODIFIED_REGEX.find(block)?.groupValues?.getOrNull(1)?.let { parseHttpDate(it) }
+        entries += WebDavRemoteFile(fileName = decoded, sizeBytes = size, lastModifiedAt = modified)
+    }
+    return entries
+        .distinctBy { it.fileName }
+        .sortedByDescending { it.fileName }
+}
+
+private fun parseHttpDate(value: String): Long? = try {
+    java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        .toInstant()
+        .toEpochMilli()
+} catch (_: Exception) {
+    null
+}
+
+private val HREF_REGEX = Regex("<[dD]:href>([^<]+)</[dD]:href>")
+private val LAST_MODIFIED_REGEX = Regex("<[dD]:getlastmodified>([^<]+)</[dD]:getlastmodified>")

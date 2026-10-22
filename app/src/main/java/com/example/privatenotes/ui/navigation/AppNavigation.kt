@@ -86,6 +86,7 @@ fun AppNavigation(container: AppContainer) {
                     noteId = noteId,
                     timeSource = container.timeSource,
                     externalScope = container.applicationScope,
+                    onPersisted = { container.noteSyncCoordinator.onNotePersisted() },
                 ),
             )
             NoteEditorScreen(

@@ -21,7 +21,13 @@ class LocalBackupManager(
     private val directory: BackupDirectory,
     private val statusStore: BackupStatusStore,
     private val timeSource: TimeSource,
-    private val retention: Int = DEFAULT_RETENTION,
+    /**
+     * How many files to keep. A provider rather than a value: the user can change it in settings,
+     * and 0 means "keep every backup" - the notes are all in each file either way.
+     */
+    private val retention: () -> Int = { statusStore.status.value.localRetention },
+    /** Fixed count for tests, which should not have to reach into the store. */
+    private val fixedRetention: Int? = null,
 ) {
 
     fun isConfigured(): Boolean = directory.isConfigured()
@@ -64,8 +70,10 @@ class LocalBackupManager(
      */
     private suspend fun pruneOldBackups() {
         try {
+            val keep = fixedRetention ?: retention()
+            if (keep <= 0) return // 0 = keep every backup file
             val files = directory.listBackupFiles().sortedByDescending { it.name }
-            files.drop(retention).forEach { directory.delete(it) }
+            files.drop(keep).forEach { directory.delete(it) }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -74,8 +82,8 @@ class LocalBackupManager(
     }
 
     companion object {
-        /** 30 daily files is a month of history without unbounded growth. */
-        const val DEFAULT_RETENTION = 30
+        /** 30 daily files is a month of history; 0 keeps every file. */
+        const val DEFAULT_RETENTION = BackupStatus.DEFAULT_LOCAL_RETENTION
 
         private const val MIME_PLAINTEXT = "application/json"
         private const val MIME_ENCRYPTED = "application/octet-stream"

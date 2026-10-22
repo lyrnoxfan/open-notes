@@ -1,6 +1,7 @@
 package com.example.privatenotes
 
 import android.content.Context
+import java.io.File
 import com.example.privatenotes.data.backup.AndroidBackupDocumentSource
 import com.example.privatenotes.data.backup.AppVersionProvider
 import com.example.privatenotes.data.backup.BackupArchiveService
@@ -12,6 +13,7 @@ import com.example.privatenotes.data.backup.BackupScheduler
 import com.example.privatenotes.data.backup.BackupSnapshotReader
 import com.example.privatenotes.data.backup.BackupStatusStore
 import com.example.privatenotes.data.backup.LocalBackupManager
+import com.example.privatenotes.data.backup.NoteSyncCoordinator
 import com.example.privatenotes.data.backup.SafBackupDirectory
 import com.example.privatenotes.data.backup.WebDavBackupManager
 import com.example.privatenotes.data.backup.WebDavClient
@@ -137,6 +139,10 @@ class AppContainer(context: Context) {
     val tagRepository: TagRepository
         get() = RoomTagRepository(database, timeSource)
 
+    /** Cache directory; a downloaded remote backup is staged here before the merge. */
+    val cacheDirectory: File
+        get() = File(appContext.cacheDir, "remote-restore").apply { mkdirs() }
+
     // ---------------------------------------------------------------- backups
 
     private val appVersionProvider: AppVersionProvider by lazy { AppVersionProvider(appContext) }
@@ -179,6 +185,16 @@ class AppContainer(context: Context) {
             statusStore = backupStatusStore,
             clientFactory = { settings, password -> WebDavClient(webDavHttpClient, settings, password) },
             timeSource = timeSource,
+        )
+    }
+
+    /** Fires a WebDAV upload a few seconds after an article is saved, when the user enabled it. */
+    val noteSyncCoordinator: NoteSyncCoordinator by lazy {
+        NoteSyncCoordinator(
+            statusStore = backupStatusStore,
+            appLock = appLock,
+            upload = { webDavBackupManager.backup(password = null) },
+            scope = applicationScope,
         )
     }
 

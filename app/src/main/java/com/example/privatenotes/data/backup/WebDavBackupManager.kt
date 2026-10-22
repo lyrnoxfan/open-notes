@@ -92,6 +92,37 @@ class WebDavBackupManager(
         }
     }
 
+    /**
+     * Backup files already on the server, newest first.
+     *
+     * Used by the restore flow: the user picks which one to merge back, rather than the app
+     * guessing that the newest file is the one they want.
+     */
+    suspend fun listRemote(): List<WebDavRemoteFile> {
+        if (!statusStore.status.value.webDavConfigured) {
+            throw BackupException(BackupErrorKind.NOT_CONFIGURED, "WebDAV is not configured")
+        }
+        val settings = statusStore.webDavSettings()
+        WebDavConfigValidator.validate(settings.baseUrl, settings.username, settings.remoteDirectory)
+        val client = clientFactory(settings, statusStore.webDavCredentials().password)
+        return client.listBackups()
+    }
+
+    /** Downloads one remote backup. The caller decides what to do with the bytes. */
+    suspend fun download(fileName: String): ByteArray {
+        if (!statusStore.status.value.webDavConfigured) {
+            throw BackupException(BackupErrorKind.NOT_CONFIGURED, "WebDAV is not configured")
+        }
+        val settings = statusStore.webDavSettings()
+        WebDavConfigValidator.validate(settings.baseUrl, settings.username, settings.remoteDirectory)
+        val client = clientFactory(settings, statusStore.webDavCredentials().password)
+        val bytes = client.download(fileName)
+        if (bytes.size > BackupLimits.MAX_FILE_BYTES) {
+            throw BackupException(BackupErrorKind.INVALID_FORMAT, "远程备份文件过大，拒绝导入")
+        }
+        return bytes
+    }
+
     private fun resolvePassword(draftPassword: CharArray?): String {
         if (!draftPassword.isNullOrEmpty()) return String(draftPassword!!)
         if (!statusStore.status.value.webDavPasswordSaved) {

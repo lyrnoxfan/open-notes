@@ -84,6 +84,13 @@ class NoteEditorViewModel(
     /** Outlives the ViewModel so a final save can finish after the screen is gone. */
     private val externalScope: CoroutineScope,
     private val debounceMillis: Long = DEFAULT_DEBOUNCE_MILLIS,
+    /**
+     * Called after a write actually reached the database, for the WebDAV auto-sync.
+     *
+     * A lambda rather than a dependency: the editor has no business knowing what a backup is, and
+     * the tests for it must not acquire one either.
+     */
+    private val onPersisted: () -> Unit = {},
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -236,6 +243,9 @@ class NoteEditorViewModel(
                 }
                 persistedRevision = snapshot.revision
                 _uiState.update { it.copy(saveStatus = SaveStatus.Saved(timeSource.nowMillis())) }
+                // After the status says "saved": an upload must never make a successful local
+                // write look like it is still in progress.
+                runCatching { onPersisted() }
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
@@ -269,6 +279,7 @@ class NoteEditorViewModel(
             noteId: String?,
             timeSource: TimeSource,
             externalScope: CoroutineScope,
+            onPersisted: () -> Unit = {},
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 NoteEditorViewModel(
@@ -277,6 +288,7 @@ class NoteEditorViewModel(
                     existingNoteId = noteId,
                     timeSource = timeSource,
                     externalScope = externalScope,
+                    onPersisted = onPersisted,
                 )
             }
         }

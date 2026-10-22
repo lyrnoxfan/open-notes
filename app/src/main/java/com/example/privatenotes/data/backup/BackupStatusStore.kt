@@ -32,11 +32,19 @@ data class BackupStatus(
     val webDavPasswordSaved: Boolean = false,
     val remoteLastSuccessAt: Long? = null,
     val remoteLastFailure: BackupFailure? = null,
+    /** Upload one backup after an article is finished, instead of waiting for the daily job. */
+    val autoSyncEnabled: Boolean = false,
+    /** How many local backup files to keep; 0 means keep every one. */
+    val localRetention: Int = DEFAULT_LOCAL_RETENTION,
 ) {
     val localConfigured: Boolean get() = !localDirectoryUri.isNullOrBlank()
 
     val webDavConfigured: Boolean
         get() = webDavBaseUrl.isNotBlank() && webDavUsername.isNotBlank() && webDavPasswordSaved
+
+    companion object {
+        const val DEFAULT_LOCAL_RETENTION = 30
+    }
 }
 
 data class WebDavSettings(
@@ -124,6 +132,27 @@ class BackupStatusStore(
                 editor.putString(KEY_WEBDAV_PASSWORD, Base64.encodeToString(wrapped, Base64.NO_WRAP))
             }
             editor.commit()
+            refresh()
+        }
+    }
+
+    /**
+     * Turns the after-each-article upload on or off.
+     *
+     * Off by default: it costs a network round trip and a full snapshot per article, which is fine
+     * for a notes app that syncs to your own server and wrong for one that does not.
+     */
+    fun setAutoSyncEnabled(enabled: Boolean) {
+        synchronized(lock) {
+            prefs.edit().putBoolean(KEY_AUTO_SYNC, enabled).commit()
+            refresh()
+        }
+    }
+
+    /** 0 keeps every backup file; the caller decides what "unlimited" means in the UI. */
+    fun setLocalRetention(count: Int) {
+        synchronized(lock) {
+            prefs.edit().putInt(KEY_LOCAL_RETENTION, count.coerceAtLeast(0)).commit()
             refresh()
         }
     }
@@ -237,6 +266,8 @@ class BackupStatusStore(
         webDavUsername = prefs.getString(KEY_WEBDAV_USER, "") ?: "",
         webDavRemoteDirectory = prefs.getString(KEY_WEBDAV_DIR, "") ?: "",
         webDavPasswordSaved = !prefs.getString(KEY_WEBDAV_PASSWORD, null).isNullOrBlank(),
+        autoSyncEnabled = prefs.getBoolean(KEY_AUTO_SYNC, false),
+        localRetention = prefs.getInt(KEY_LOCAL_RETENTION, BackupStatus.DEFAULT_LOCAL_RETENTION),
         remoteLastSuccessAt = positiveOrNull(prefs.getLong(KEY_REMOTE_SUCCESS, 0L)),
         remoteLastFailure = readFailure(KEY_REMOTE_FAILURE_AT, KEY_REMOTE_FAILURE_KIND, KEY_REMOTE_FAILURE_DETAIL),
     )
@@ -281,6 +312,8 @@ class BackupStatusStore(
         private const val KEY_REMOTE_FAILURE_AT = "remote_last_failure_at"
         private const val KEY_REMOTE_FAILURE_KIND = "remote_last_failure_kind"
         private const val KEY_REMOTE_FAILURE_DETAIL = "remote_last_failure_detail"
+        private const val KEY_AUTO_SYNC = "auto_sync_enabled"
+        private const val KEY_LOCAL_RETENTION = "local_retention"
         private const val MAX_DETAIL_LENGTH = 500
     }
 }

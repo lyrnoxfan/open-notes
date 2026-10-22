@@ -48,7 +48,7 @@ class LocalBackupManagerTest {
             json = BackupJson(),
             appVersionProvider = AppVersionProvider(context),
         )
-        manager = LocalBackupManager(archive, directory, statusStore, TimeSource { now })
+        manager = LocalBackupManager(archive, directory, statusStore, TimeSource { now }, fixedRetention = 30)
     }
 
     @After

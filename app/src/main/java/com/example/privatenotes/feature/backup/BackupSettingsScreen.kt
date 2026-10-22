@@ -3,6 +3,7 @@ package com.example.privatenotes.feature.backup
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -87,6 +88,11 @@ internal class SettingsActions(
     val onCancelImport: () -> Unit = {},
     val onConfirmImport: (CharArray?) -> Unit = {},
     val onDismissImportReport: () -> Unit = {},
+    val onAutoSyncChange: (Boolean) -> Unit = {},
+    val onLocalRetentionChange: (Int) -> Unit = {},
+    val onListRemote: () -> Unit = {},
+    val onDismissRemote: () -> Unit = {},
+    val onDownloadRemote: (String, CharArray?) -> Unit = { _, _ -> },
     val onBack: () -> Unit = {},
 )
 
@@ -160,6 +166,11 @@ fun BackupSettingsScreen(
         onConfirmImport = { password -> viewModel.confirmImport(password) },
         onDismissImportReport = viewModel::dismissImportReport,
         onOpenTags = onOpenTags,
+        onAutoSyncChange = viewModel::setAutoSyncEnabled,
+        onLocalRetentionChange = viewModel::setLocalRetention,
+        onListRemote = viewModel::listRemoteBackups,
+        onDismissRemote = viewModel::dismissRemoteFiles,
+        onDownloadRemote = viewModel::downloadAndImport,
         onBack = onBack,
     )
 
@@ -244,6 +255,7 @@ internal fun SettingsContent(
                     state = state,
                     onChooseDirectory = actions.onChooseDirectory,
                     onBackupNow = { showLocalBackupDialog = true },
+                    onRetentionChange = actions.onLocalRetentionChange,
                 )
             }
 
@@ -257,6 +269,8 @@ internal fun SettingsContent(
                     onSave = actions.onSaveWebDav,
                     onTest = actions.onTestConnection,
                     onUploadNow = { showRemoteBackupDialog = true },
+                    onAutoSyncChange = actions.onAutoSyncChange,
+                    onListRemote = actions.onListRemote,
                 )
             }
 
@@ -358,6 +372,27 @@ internal fun SettingsContent(
     state.importReport?.let { outcome ->
         ImportReportDialog(outcome = outcome, onClose = actions.onDismissImportReport)
     }
+
+    state.remoteFiles?.let { files ->
+        if (files.isEmpty()) {
+            AlertDialog(
+                onDismissRequest = actions.onDismissRemote,
+                title = { Text(stringResource(R.string.backup_restore_title)) },
+                text = { Text(stringResource(R.string.backup_restore_empty)) },
+                confirmButton = {
+                    TextButton(onClick = actions.onDismissRemote) {
+                        Text(stringResource(R.string.dialog_confirm))
+                    }
+                },
+            )
+        } else {
+            RemoteFilesDialog(
+                files = files,
+                onDismiss = actions.onDismissRemote,
+                onPick = { row, password -> actions.onDownloadRemote(row.fileName, password) },
+            )
+        }
+    }
 }
 
 /**
@@ -390,6 +425,27 @@ private fun SettingsSection(
     }
 }
 
+@Composable
+private fun RetentionChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+            contentColor = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                androidx.compose.ui.graphics.Color.Transparent
+            },
+        ),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
 /** A short line of explanation under a control; never a paragraph. */
 @Composable
 private fun SectionHint(text: String) {
@@ -405,6 +461,7 @@ private fun LocalBackupSection(
     state: BackupSettingsUiState,
     onChooseDirectory: () -> Unit,
     onBackupNow: () -> Unit,
+    onRetentionChange: (Int) -> Unit,
 ) {
     SettingsSection(title = stringResource(R.string.backup_section_local)) {
         when {
@@ -460,6 +517,30 @@ private fun LocalBackupSection(
         }
 
         SectionHint(stringResource(R.string.backup_local_hint))
+
+        Text(
+            text = stringResource(R.string.backup_retention_title),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RetentionChoice(
+                label = stringResource(R.string.backup_retention_30),
+                selected = state.localRetention == 30,
+                onClick = { onRetentionChange(30) },
+            )
+            RetentionChoice(
+                label = stringResource(R.string.backup_retention_90),
+                selected = state.localRetention == 90,
+                onClick = { onRetentionChange(90) },
+            )
+            RetentionChoice(
+                label = stringResource(R.string.backup_retention_all),
+                selected = state.localRetention == 0,
+                onClick = { onRetentionChange(0) },
+            )
+        }
+        SectionHint(stringResource(R.string.backup_retention_hint))
     }
 }
 
@@ -473,6 +554,8 @@ private fun WebDavSection(
     onSave: () -> Unit,
     onTest: () -> Unit,
     onUploadNow: () -> Unit,
+    onAutoSyncChange: (Boolean) -> Unit,
+    onListRemote: () -> Unit,
 ) {
     SettingsSection(title = stringResource(R.string.backup_section_remote)) {
         if (!state.remoteConfigured) {
@@ -552,6 +635,34 @@ private fun WebDavSection(
         }
 
         SectionHint(stringResource(R.string.backup_webdav_hint))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.backup_auto_sync_title),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = state.autoSyncEnabled,
+                onCheckedChange = onAutoSyncChange,
+                enabled = !state.busy && state.remoteConfigured,
+            )
+        }
+        SectionHint(stringResource(R.string.backup_auto_sync_hint))
+
+        OutlinedButton(
+            onClick = onListRemote,
+            enabled = !state.busy && state.remoteConfigured,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.backup_restore_pick))
+        }
+        SectionHint(stringResource(R.string.backup_restore_hint))
     }
 }
 
@@ -727,6 +838,83 @@ private fun AboutRow(label: String, value: String) {
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+/**
+ * The remote backups, newest first. An encrypted one asks for its password before downloading,
+ * because the merge cannot start without it.
+ */
+@Composable
+private fun RemoteFilesDialog(
+    files: List<RemoteFileRow>,
+    onDismiss: () -> Unit,
+    onPick: (RemoteFileRow, CharArray?) -> Unit,
+) {
+    var passwordFor by remember { mutableStateOf<RemoteFileRow?>(null) }
+    val formatter = remember { DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.backup_restore_title)) },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                files.forEach { row ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (row.encrypted) passwordFor = row else onPick(row, null)
+                            }
+                            .padding(vertical = 10.dp),
+                    ) {
+                        Text(
+                            text = row.fileName,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = buildString {
+                                append(formatBytes(row.sizeBytes))
+                                row.modifiedAt?.let { append(" · " + formatter.format(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()))) }
+                                if (row.encrypted) append(" · " + stringResource(R.string.backup_restore_encrypted))
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_cancel))
+            }
+        },
+    )
+
+    passwordFor?.let { row ->
+        PasswordPromptDialog(
+            title = stringResource(R.string.backup_restore_password_title),
+            body = stringResource(R.string.backup_restore_password_body),
+            confirmLabel = stringResource(R.string.backup_restore_confirm),
+            onDismiss = { passwordFor = null },
+            onConfirm = { password ->
+                passwordFor = null
+                onPick(row, password)
+            },
+        )
+    }
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
+    bytes >= 1_024 -> "%.0f KB".format(bytes / 1_024.0)
+    else -> "$bytes B"
 }
 
 @Composable

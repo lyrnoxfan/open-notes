@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.work.WorkInfo
+import java.io.File
 import com.example.privatenotes.AppContainer
 import com.example.privatenotes.data.backup.BackupDirectory
 import com.example.privatenotes.data.backup.BackupDocumentInfo
@@ -40,12 +41,22 @@ enum class BackupOperation {
     REMOTE_BACKUP,
     INSPECTING_IMPORT,
     IMPORTING,
+    LISTING_REMOTE,
+    DOWNLOADING_REMOTE,
 }
 
 sealed interface BackupNotice {
     data class Info(val text: String) : BackupNotice
     data class Failure(val kind: BackupErrorKind, val detail: String?) : BackupNotice
 }
+
+/** One remote backup as the restore dialog shows it. */
+data class RemoteFileRow(
+    val fileName: String,
+    val sizeBytes: Long,
+    val modifiedAt: Long?,
+    val encrypted: Boolean,
+)
 
 data class PendingImport(
     val uri: Uri,
@@ -72,6 +83,11 @@ data class BackupSettingsUiState(
     val message: BackupNotice? = null,
     val pendingImport: PendingImport? = null,
     val importReport: ImportOutcome? = null,
+    /** Remote files offered for restore, newest first. */
+    val remoteFiles: List<RemoteFileRow>? = null,
+    val autoSyncEnabled: Boolean = false,
+    /** 0 means keep every local backup file. */
+    val localRetention: Int = BackupStatus.DEFAULT_LOCAL_RETENTION,
 ) {
     val busy: Boolean get() = operation != null
     val canBackupLocal: Boolean get() = localConfigured && localAuthorized
@@ -91,6 +107,8 @@ class BackupSettingsViewModel(
     private val webDavBackupManager: WebDavBackupManager,
     private val importer: BackupImporter,
     private val scheduler: BackupScheduler,
+    /** Where a downloaded backup is staged before being merged; the app cache directory. */
+    private val cacheDirProvider: () -> File = { File(System.getProperty("java.io.tmpdir") ?: ".") },
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(BackupSettingsUiState())
@@ -286,7 +304,92 @@ class BackupSettingsViewModel(
         }
     }
 
-    fun inspectImport(uri: Uri) {
+    /** Turns the after-each-article upload on or off. Persisted immediately. */
+    fun setAutoSyncEnabled(enabled: Boolean) {
+        statusStore.setAutoSyncEnabled(enabled)
+    }
+
+    fun setLocalRetention(count: Int) {
+        statusStore.setLocalRetention(count)
+    }
+
+    /** Asks the server what it has, newest first, so the user can choose what to merge back. */
+    fun listRemoteBackups() {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            setOperation(BackupOperation.LISTING_REMOTE)
+            try {
+                val files = withContext(Dispatchers.IO) { webDavBackupManager.listRemote() }
+                _state.update {
+                    it.copy(
+                        remoteFiles = files.map { file ->
+                            RemoteFileRow(
+                                fileName = file.fileName,
+                                sizeBytes = file.sizeBytes,
+                                modifiedAt = file.lastModifiedAt,
+                                encrypted = file.fileName.endsWith(".pnb"),
+                            )
+                        },
+                        message = if (files.isEmpty()) {
+                            BackupNotice.Info("服务器上还没有备份")
+                        } else {
+                            null
+                        },
+                    )
+                }
+            } catch (e: BackupException) {
+                _state.update { it.copy(message = BackupNotice.Failure(e.kind, e.detail ?: e.message)) }
+            } catch (e: Exception) {
+                _state.update { it.copy(message = BackupNotice.Failure(BackupErrorKind.UNKNOWN, e.message)) }
+            } finally {
+                setOperation(null)
+            }
+        }
+    }
+
+    fun dismissRemoteFiles() {
+        _state.update { it.copy(remoteFiles = null) }
+    }
+
+    /**
+     * Downloads one remote backup into the cache and hands it to the normal import path.
+     *
+     * The merge rules are the importer's, unchanged: this only removes the "export to a file and
+     * pick it with the file picker" step.
+     */
+    fun downloadAndImport(fileName: String, password: CharArray?) {
+        if (_state.value.busy) {
+            password?.fill('\u0000')
+            return
+        }
+        _state.update { it.copy(remoteFiles = null) }
+        viewModelScope.launch {
+            setOperation(BackupOperation.DOWNLOADING_REMOTE)
+            val cached = try {
+                withContext(Dispatchers.IO) {
+                    val bytes = webDavBackupManager.download(fileName)
+                    val file = File(cacheDirProvider(), fileName.substringAfterLast('/'))
+                    file.writeBytes(bytes)
+                    file
+                }
+            } catch (e: BackupException) {
+                password?.fill('\u0000')
+                _state.update { it.copy(message = BackupNotice.Failure(e.kind, e.detail ?: e.message)) }
+                setOperation(null)
+                return@launch
+            } catch (e: Exception) {
+                password?.fill('\u0000')
+                _state.update { it.copy(message = BackupNotice.Failure(BackupErrorKind.UNKNOWN, e.message)) }
+                setOperation(null)
+                return@launch
+            }
+            setOperation(null)
+            // Reuse inspect + confirm so a remote restore and a local one behave identically.
+            inspectImport(Uri.fromFile(cached), password)
+        }
+    }
+
+    fun inspectImport(uri: Uri, prefilledPassword: CharArray? = null) {
         if (_state.value.busy) return
         viewModelScope.launch {
             setOperation(BackupOperation.INSPECTING_IMPORT)
@@ -399,6 +502,8 @@ class BackupSettingsViewModel(
                 remoteLastSuccessAt = status.remoteLastSuccessAt,
                 remoteLastFailure = status.remoteLastFailure,
                 remoteWorkState = remoteWork,
+                autoSyncEnabled = status.autoSyncEnabled,
+                localRetention = status.localRetention,
             )
         }
     }
@@ -428,6 +533,7 @@ class BackupSettingsViewModel(
                     webDavBackupManager = container.webDavBackupManager,
                     importer = container.backupImporter,
                     scheduler = container.backupScheduler,
+                    cacheDirProvider = { container.cacheDirectory },
                 )
             }
         }

@@ -165,5 +165,9 @@ class WebDavBackupManagerTest {
         override suspend fun deleteQuietly(fileName: String) {
             deleted = true
         }
+
+        override suspend fun listBackups(): List<WebDavRemoteFile> = emptyList()
+
+        override suspend fun download(fileName: String): ByteArray = ByteArray(0)
     }
 }
