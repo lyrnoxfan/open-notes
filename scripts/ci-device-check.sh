@@ -3,15 +3,10 @@
 set -uo pipefail
 result=0
 ./gradlew --no-daemon --stacktrace connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.example.privatenotes.ScriptDriven || result=$?
-mkdir -p app/build/ui-previews
-for name in list-light list-dark editor-light editor-dark list-large-narrow editor-large-narrow; do
-  target="app/build/ui-previews/$name.png"
-  if ! adb exec-out run-as com.example.privatenotes cat "files/ui-previews/$name.png" > "$target" || ! test -s "$target"; then
-    rm -f "$target"
-    echo "Missing required UI preview: $name" >&2
-    result=1
-  fi
-done
+# connectedCheck's UTP removes packages when it finishes. Reinstall the two test APKs,
+# render synthetic content in a separate host, and pull while that install is still present.
+# This does not disable MainActivity's FLAG_SECURE or app authentication.
+bash scripts/capture-ui-previews.sh || result=1
 # Dedicated reinstall/kill/fault and at-rest canary suites intentionally use their own install.
 # Run only after ordinary tests and previews, never against real user data.
 bash scripts/e2e-reinstall.sh || result=1

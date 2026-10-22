@@ -30,25 +30,28 @@ class EncryptedDatabaseTest {
     private val context: Context
         get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    // Never delete the live Application container's database: the suite shares one process.
+    private val TEST_DATABASE = "encryption-contract-test.db"
+
     private val passphrase = ByteArray(32) { (it + 1).toByte() }
 
     private val databaseFile: File
-        get() = context.getDatabasePath(AppDatabase.NAME)
+        get() = context.getDatabasePath(TEST_DATABASE)
 
     @Before
     fun cleanBefore() {
-        context.deleteDatabase(AppDatabase.NAME)
+        context.deleteDatabase(TEST_DATABASE)
         databaseFile.parentFile?.mkdirs()
     }
 
     @After
     fun cleanAfter() {
-        context.deleteDatabase(AppDatabase.NAME)
+        context.deleteDatabase(TEST_DATABASE)
     }
 
     /** Opens the real encrypted database and always closes it, even when the body throws. */
     private fun <T> withDatabase(passphrase: ByteArray = this.passphrase, block: (AppDatabase) -> T): T {
-        val database = EncryptedDatabaseProvider.openWithPassphrase(context, passphrase)
+        val database = EncryptedDatabaseProvider.openWithPassphrase(context, passphrase, TEST_DATABASE)
         return try {
             block(database)
         } finally {
@@ -137,7 +140,7 @@ class EncryptedDatabaseTest {
         databaseFile.writeBytes("SQLite format 3\u0000".toByteArray(Charsets.US_ASCII) + ByteArray(256))
 
         assertThrows(PlaintextDatabaseException::class.java) {
-            EncryptedDatabaseProvider.openWithPassphrase(context, passphrase)
+            EncryptedDatabaseProvider.openWithPassphrase(context, passphrase, TEST_DATABASE)
         }
     }
 
