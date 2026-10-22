@@ -48,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -139,6 +141,15 @@ internal fun EditorContent(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
+
+    // A failed save is easy to miss when the status line is not being watched: buzz once so the
+    // failure is felt, not just seen.
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(state.saveStatus) {
+        if (state.saveStatus is SaveStatus.Failed) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
+    }
 
     // The text field's value is owned here, not rebuilt from the ViewModel's string on every
     // frame. Rebuilding it was what dropped an IME composition: TextFieldValue(text, selection)

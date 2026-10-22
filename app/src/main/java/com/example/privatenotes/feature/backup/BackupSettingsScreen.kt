@@ -63,6 +63,7 @@ import com.example.privatenotes.data.backup.BackupErrorKind
 import com.example.privatenotes.data.backup.BackupFailure
 import com.example.privatenotes.data.backup.BackupFileKind
 import com.example.privatenotes.data.backup.ImportOutcome
+import com.example.privatenotes.data.backup.MergeConflictKind
 import com.example.privatenotes.feature.lock.AppLockSection
 import com.example.privatenotes.security.AppLock
 import com.example.privatenotes.security.AppLockAuthenticator
@@ -1088,15 +1089,21 @@ private fun ImportReportDialog(outcome: ImportOutcome, onClose: () -> Unit) {
     } else {
         null
     }
-    val conflictsLine = if (report.conflicts.isNotEmpty()) {
-        stringResource(R.string.backup_import_report_conflicts, report.conflicts.size)
-    } else {
-        null
+    val conflictLines = report.conflicts.map { conflict ->
+        // One plain-language line per conflict instead of a bare count: the reader learns what
+        // happened to each item, not just how many there were.
+        stringResource(
+            when (conflict.kind) {
+                MergeConflictKind.NOTE_TIMESTAMP_TIE -> R.string.backup_import_report_conflict_note_tie
+                MergeConflictKind.TAG_NAME_COLLISION -> R.string.backup_import_report_conflict_tag
+                MergeConflictKind.NOTE_EDITED_AFTER_TOMBSTONE -> R.string.backup_import_report_conflict_tombstone
+            }
+        )
     }
     val safetyLine = outcome.safetyBackupFileName?.let {
         stringResource(R.string.backup_import_report_safety, it)
     }
-    val lines = listOfNotNull(countsLine, tombstonesLine, tagsLine, conflictsLine, safetyLine)
+    val lines = listOfNotNull(countsLine, tombstonesLine, tagsLine) + conflictLines + listOfNotNull(safetyLine)
 
     AlertDialog(
         onDismissRequest = onClose,

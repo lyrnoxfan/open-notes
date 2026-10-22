@@ -5,6 +5,7 @@
 
     <!-- 列表 -->
     <string name="note_list_empty_title">还没有笔记，写下的每一行都存在本机的加密数据库里。</string>
+    <string name="note_list_empty_action">写第一篇笔记</string>
     <string name="note_list_error_title">无法打开加密数据库</string>
     <string name="note_list_error_hint">原有数据没有被删除或重建。请通过备份恢复。</string>
     <string name="note_list_new">新建笔记</string>
@@ -164,7 +165,9 @@
     <string name="backup_import_report_counts">新增笔记 %1$d，更新 %2$d，保留本地 %3$d，未变化 %4$d。</string>
     <string name="backup_import_report_tombstones">按删除标记跳过 %1$d 篇，删除本地旧副本 %2$d 篇。</string>
     <string name="backup_import_report_tags">新增标签 %1$d 个，按名称合并 %2$d 个，新增关联 %3$d 条。</string>
-    <string name="backup_import_report_conflicts">检测到 %1$d 处冲突：冲突项保留本地版本，未被静默覆盖。</string>
+    <string name="backup_import_report_conflict_note_tie">笔记冲突：两边都改过，保留了本地版本，未被备份覆盖。</string>
+    <string name="backup_import_report_conflict_tag">标签名冲突：该名称已被本地其他标签占用，保留本地标签。</string>
+    <string name="backup_import_report_conflict_tombstone">笔记冲突：备份后本地又有新编辑，保留了本地的编辑。</string>
     <string name="backup_import_report_safety">导入前安全备份：%1$s</string>
     <string name="backup_import_report_close">关闭</string>
 

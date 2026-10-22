@@ -144,7 +144,17 @@ fun LockScreen(
                                 availability = authenticator.availability()
                                 status = LockStatus.Failed(R.string.lock_generic_error)
                             }
-                            is AuthResult.Failure -> status = result.reason.toStatus()
+                            is AuthResult.Failure -> {
+                                if (result.reason == AuthFailure.LOCKOUT ||
+                                    result.reason == AuthFailure.PERMANENT_LOCKOUT
+                                ) {
+                                    // Biometrics are locked out: don't strand the user on an
+                                    // error screen, go straight to the device credential.
+                                    startDeviceCredential()
+                                } else {
+                                    status = result.reason.toStatus()
+                                }
+                            }
                         }
                     }
                 } else {

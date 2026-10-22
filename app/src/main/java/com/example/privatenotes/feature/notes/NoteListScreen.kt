@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.animation.core.tween
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -235,7 +237,7 @@ internal fun NoteListContent(
                         onClear = onClearFilters,
                     )
 
-                    state.notes.isEmpty() -> EmptyState()
+                    state.notes.isEmpty() -> EmptyState(onCreateNote = onCreateNote)
 
                     else -> Box(
                         modifier = Modifier.fillMaxSize(),
@@ -446,15 +448,27 @@ private fun NoteRow(
     }
 }
 
-/** One sentence, no illustration (design.md §9): the empty screen is paper, not a poster. */
+/** One sentence plus a direct way into the editor (design.md §9): the empty screen is paper, not a poster. */
 @Composable
-private fun EmptyState() {
-    Text(
-        text = stringResource(R.string.note_list_empty_title),
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun EmptyState(onCreateNote: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(horizontal = 40.dp),
-    )
+    ) {
+        Text(
+            text = stringResource(R.string.note_list_empty_title),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = onCreateNote,
+            modifier = Modifier
+                .padding(top = 20.dp)
+                .heightIn(min = 48.dp),
+        ) {
+            Text(stringResource(R.string.note_list_empty_action))
+        }
+    }
 }
 
 @Composable
