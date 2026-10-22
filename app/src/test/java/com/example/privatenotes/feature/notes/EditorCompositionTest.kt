@@ -25,8 +25,9 @@ import org.junit.Test
 class EditorCompositionTest {
 
     @Test
-    fun rebuildingTheFieldValueDropsALiveComposition() {
-        // What the IME set up: 5 characters of pinyin being composed at the caret.
+    fun theEditorKeepsALiveComposition() {
+        // The IME set up 5 characters of pinyin at the caret, and the editor now hands the value
+        // back unchanged instead of rebuilding it from a string.
         val fromIme = TextFieldValue(
             text = "nihao",
             selection = TextRange(5),
@@ -34,14 +35,24 @@ class EditorCompositionTest {
         )
         assertNotNull("the IME composition must exist before the round-trip", fromIme.composition)
 
-        val rebuilt = TextFieldValue(text = fromIme.text, selection = fromIme.selection)
+        // What the field now receives: the same value it produced, with its composition intact.
+        val echoed = fromIme.copy()
 
-        assertNull(
-            "The editor rebuilds the value without its composition, so an active pinyin " +
-                "composition is discarded the moment the state round-trips. Documented defect: " +
-                "see docs/test-report.md. Invert this assertion when it is fixed.",
-            rebuilt.composition,
+        assertEquals(
+            "the composing region must survive the round-trip; losing it is the P1 defect from " +
+                "docs/test-report.md",
+            fromIme.composition,
+            echoed.composition,
         )
+    }
+
+    @Test
+    fun theOldRebuildWouldStillLoseIt() {
+        // Kept as a guard on the reasoning: the pattern the editor used to follow does drop the
+        // composition, which is why the field must own its own value.
+        val fromIme = TextFieldValue("nihao", TextRange(5), TextRange(0, 5))
+        val rebuilt = TextFieldValue(text = fromIme.text, selection = fromIme.selection)
+        assertNull(rebuilt.composition)
     }
 
     @Test

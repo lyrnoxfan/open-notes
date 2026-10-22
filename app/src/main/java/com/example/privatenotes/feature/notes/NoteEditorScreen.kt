@@ -42,6 +42,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,7 +89,6 @@ fun NoteEditorScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
-    var selection by remember { mutableStateOf(TextRange.Zero) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // §7.1: leaving the editor must not drop the last keystrokes, and neither must going to
@@ -105,22 +105,12 @@ fun NoteEditorScreen(
         }
     }
 
-    // Place the caret at the end of freshly loaded text, and keep it inside bounds if the text
-    // was replaced underneath it.
-    LaunchedEffect(state.isLoaded, state.content.length) {
-        if (selection.end > state.content.length) {
-            selection = TextRange(state.content.length)
-        }
-    }
-
     LaunchedEffect(state.isDeleted) {
         if (state.isDeleted) onBack()
     }
 
     EditorContent(
         state = state,
-        selection = selection,
-        onSelectionChange = { selection = it },
         onTitleChange = viewModel::onTitleChange,
         onContentChange = viewModel::onContentChange,
         onTogglePreview = viewModel::togglePreview,
@@ -140,8 +130,6 @@ fun NoteEditorScreen(
 @Composable
 internal fun EditorContent(
     state: NoteEditorUiState,
-    selection: TextRange,
-    onSelectionChange: (TextRange) -> Unit,
     onTitleChange: (String) -> Unit,
     onContentChange: (String) -> Unit,
     onTogglePreview: () -> Unit,
@@ -153,6 +141,24 @@ internal fun EditorContent(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
+
+    // The text field's value is owned here, not rebuilt from the ViewModel's string on every
+    // frame. Rebuilding it was what dropped an IME composition: TextFieldValue(text, selection)
+    // carries no composition, and the editor rebuilt on every keystroke (docs/test-report.md P1).
+    // rememberSaveable, so the caret and the composing buffer also survive a configuration change;
+    // EditorContent stays composed while the preview is toggled, so they survive that too.
+    var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(state.content, TextRange(state.content.length)))
+    }
+
+    // One-way sync from the ViewModel: only when the text actually changed underneath the field
+    // (first load, an import, another screen's edit) and never while a composition is open - that
+    // would throw away what the IME is in the middle of.
+    LaunchedEffect(state.content) {
+        if (bodyValue.composition == null && bodyValue.text != state.content) {
+            bodyValue = TextFieldValue(state.content, TextRange(state.content.length))
+        }
+    }
 
     if (tagDialogOpen) {
         TagDialog(
@@ -274,10 +280,9 @@ internal fun EditorContent(
                             )
                         } else {
                             EditorBody(
-                                content = state.content,
-                                selection = selection,
+                                value = bodyValue,
                                 onValueChange = { value ->
-                                    onSelectionChange(value.selection)
+                                    bodyValue = value
                                     onContentChange(value.text)
                                 },
                             )
@@ -321,15 +326,14 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 
 @Composable
 private fun EditorBody(
-    content: String,
-    selection: TextRange,
+    value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
 ) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BasicTextField(
-        value = TextFieldValue(text = content, selection = selection),
+        value = value,
         onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxSize()
@@ -337,7 +341,7 @@ private fun EditorBody(
         textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         decorationBox = { inner ->
-            if (content.isEmpty()) {
+            if (value.text.isEmpty()) {
                 Text(
                     text = stringResource(R.string.editor_content_hint),
                     style = bodyStyle,

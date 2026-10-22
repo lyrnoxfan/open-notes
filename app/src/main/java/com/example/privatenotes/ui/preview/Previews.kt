@@ -183,8 +183,6 @@ private fun EditorPreview(state: NoteEditorUiState) {
     PreviewFrame {
         EditorContent(
             state = state,
-            selection = androidx.compose.ui.text.TextRange.Zero,
-            onSelectionChange = {},
             onTitleChange = {},
             onContentChange = {},
             onTogglePreview = {},
