@@ -414,7 +414,13 @@ private fun EditorBody(
     // it - that fight is the "jump to the bottom, then yanked back to the tap" bug. This effect
     // only corrects the viewport after the keyboard settles; it reads the current selection when
     // it runs, so it still lands on the right caret.
-    LaunchedEffect(focused, textLayout, viewportHeight) {
+    //
+    // Deliberately *not* keyed on focused: on tap, focus flips before the tap's selection lands
+    // in bodyValue, so the effect would read the stale caret (which rests at the end of the note
+    // while the view opens at the top) and scroll to the bottom, then the native follow-up yanks
+    // it back - the exact phantom jump. The keyboard resize always follows a tap-focus, so keying
+    // on the viewport alone still covers it, with the selection already settled.
+    LaunchedEffect(textLayout, viewportHeight) {
         // Unfocused means the note is merely being read: opening it must show the top, not jump
         // to wherever the caret happens to rest.
         if (!focused || viewportHeight <= 0) {
