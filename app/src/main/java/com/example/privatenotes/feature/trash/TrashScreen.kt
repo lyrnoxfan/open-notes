@@ -127,22 +127,13 @@ fun TrashScreen(
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(32.dp),
                 )
-                state.notes.isEmpty() -> Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                // One sentence, like the empty note list (design.md §9).
+                state.notes.isEmpty() -> Text(
+                    text = stringResource(R.string.trash_empty_title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 40.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.trash_empty_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = stringResource(R.string.trash_empty_body),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
+                )
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
@@ -155,7 +146,8 @@ fun TrashScreen(
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.outline,
+                            thickness = 1.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
                 }
@@ -174,7 +166,7 @@ private fun TrashRow(
     val now = System.currentTimeMillis()
     val remainingDays = remainingDays(deletedAt, now)
 
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
         Text(
             text = note.title.ifBlank { stringResource(R.string.note_untitled) },
             style = MaterialTheme.typography.titleMedium,
@@ -194,13 +186,26 @@ private fun TrashRow(
             modifier = Modifier.padding(top = 6.dp),
         )
         Row(
-            modifier = Modifier.padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            TextButton(onClick = onRestore) { Text(stringResource(R.string.trash_restore)) }
-            TextButton(onClick = onDeleteForever) {
+            TextButton(
+                onClick = onRestore,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.trash_restore),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            TextButton(
+                onClick = onDeleteForever,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 6.dp),
+            ) {
                 Text(
                     text = stringResource(R.string.trash_delete_forever),
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.error,
                 )
             }

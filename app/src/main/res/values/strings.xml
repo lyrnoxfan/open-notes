@@ -41,8 +41,7 @@
     <!-- 回收站 -->
     <string name="trash_title">回收站</string>
     <string name="trash_back">返回</string>
-    <string name="trash_empty_title">回收站是空的</string>
-    <string name="trash_empty_body">删除的笔记会在这里保留 30 天。</string>
+    <string name="trash_empty_title">回收站是空的。删除的笔记会在这里留 30 天。</string>
     <string name="trash_restore">恢复</string>
     <string name="trash_delete_forever">永久删除</string>
     <string name="trash_remaining_days">剩余 %1$d 天</string>
