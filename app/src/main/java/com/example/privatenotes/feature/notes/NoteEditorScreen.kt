@@ -408,7 +408,13 @@ private fun EditorBody(
     // imePadding(), so by the time this composable reads it, it is zero and a guard on it makes
     // the whole effect a no-op. The resize itself is the signal - with adjustResize the keyboard
     // shrinks this viewport, which re-runs the effect with the smaller height.
-    LaunchedEffect(focused, value.selection, textLayout, viewportHeight) {
+    //
+    // Deliberately *not* keyed on value.selection either: BasicTextField already follows the
+    // cursor natively on tap/type, and a second actor scrolling on every selection change fights
+    // it - that fight is the "jump to the bottom, then yanked back to the tap" bug. This effect
+    // only corrects the viewport after the keyboard settles; it reads the current selection when
+    // it runs, so it still lands on the right caret.
+    LaunchedEffect(focused, textLayout, viewportHeight) {
         // Unfocused means the note is merely being read: opening it must show the top, not jump
         // to wherever the caret happens to rest.
         if (!focused || viewportHeight <= 0) {
@@ -422,6 +428,9 @@ private fun EditorBody(
             delay(50)
         }
         val layout = textLayout ?: return@LaunchedEffect
+        // The layout can lag behind the text by a frame; a cursor rect from a stale layout
+        // points at the wrong place (the phantom jump-to-bottom). Skip until they agree.
+        if (layout.layoutInput.text.text != value.text) return@LaunchedEffect
         val cursor = value.selection.end.coerceIn(0, value.text.length)
         val cursorRect = layout.getCursorRect(cursor)
         val top = cursorRect.top.roundToInt()
