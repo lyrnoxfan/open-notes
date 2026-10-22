@@ -46,7 +46,7 @@ The oracle uses the actual rendered text layout coordinates, not the text field'
 answer. Layout-tree introspection is read-only and test-only, pinned to the current Compose
 version. It does not disable `FLAG_SECURE`, authentication, encryption or other protections.
 
-## Repair under validation
+## Repair
 
 The body moves to the state-based text field, with one text/selection/composition buffer and one
 native scroll state. Saved String echoes no longer replace that buffer or reset its selection.
@@ -54,7 +54,43 @@ On viewport-height changes only, the current caret is checked against the resize
 brought into view through that same scroll state. Reading/dragging is not keyed to the old caret,
 and no nested vertical scroll owner is added. Exit/preview/delete handoffs flush current text.
 
-Validation is still in progress. The initial build compiles. The first comparison's baseline
-setup failed because a shallow checkout did not contain the old commit; those failures are
-infrastructure failures, not reproduction evidence. The old-editor run above remains the actual
-baseline evidence. Do not call the patch accepted before the current interaction checks run.
+## Final acceptance
+
+Verified code: `5d06816bbe18ff145da8c6abe795351217bf027e`.
+CI [39870032901](https://github.com/lyrnoxfan/open-notes/actions/runs/39870032901) completed successfully:
+build and API26/API35 full instrumented jobs succeeded. Downloaded raw logs and XML were inspected.
+
+| Platform | Geometry | Long-document tests | Re-entry cycles |
+| --- | --- | --- | --- |
+| API26 | default | 2 passed | all 9 passed |
+| API26 | 320dp, 2x font | 2 passed | all 9 passed |
+| API35 | default | 2 passed | all 9 passed |
+| API35 | 320dp, 2x font | 2 passed | all 9 passed |
+
+Every combination logs PASS for rows 31, 60 and 100, entries 1 through 3: 36 complete
+list-re-entry cycles. Each includes first and second real IME invocation, per-frame no-top-flash
+assertions, visible caret, insertion/deletion and exact full-content comparison after reopening.
+The separate interaction test covers newline editing, long-press word selection/replacement and
+save/reopen. Each platform's ordinary instrumented XML has 42 tests and zero failures, errors or
+skips. The unit report contains 257 tests with zero failures or ignored tests. Build and lint gates
+passed; passing lint is not a claim of zero warnings.
+
+The comparison job in this final run was conditionally skipped. The old/fixed comparison remains
+run 39868426740, where fixed jobs passed and baseline jobs failed, including the observed top jump.
+A shallow-checkout setup failure from an earlier attempt is not used as reproduction evidence.
+
+The delivered Debug APK is the artifact from the successful 5d06816 run, 35,289,812 bytes.
+Its ZIP integrity and Android APK Signature Scheme v2 signature were verified.
+SHA-256: `b4bc6ae60b884e07b8932b1984216257925d9b3e83c162862de174ac8987a691`.
+
+### Limits
+
+- These are Android 8/API26 and Android 15/API35 emulator results, not every physical device or
+  OEM keyboard. The APK is Debug-signed, not a formal Release-signed publication.
+- Actual frame/cycle logs are the retained interaction evidence. The normal CI did not upload
+  `longdoc-evidence` PNGs. Synthetic palette previews are not long-document interaction screenshots.
+- No security flags, authentication or encryption were weakened. This is acceptance of the
+  reported long-document first-IME defect, not proof that no bug exists anywhere in the app.
+- PR #2 was merged by lyrnoxfan at 2026-10-22 23:23:33 UTC; the repair execution did not merge,
+  deploy or publish a release. This report follow-up changes documentation only; the verified
+  executable code remains 5d06816.
