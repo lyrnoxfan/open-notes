@@ -18,7 +18,6 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -177,11 +176,6 @@ internal fun TrashContent(
                             onRestore = { onRestore(note.id) },
                             onDeleteForever = { pendingDeletion = note },
                         )
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            thickness = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
                     }
                 }
             }
@@ -200,7 +194,10 @@ private fun TrashRow(
     val now = System.currentTimeMillis()
     val remainingDays = remainingDays(deletedAt, now)
 
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
+    Column(modifier = Modifier.fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 6.dp)
+        .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.large)
+        .padding(20.dp)) {
         Text(
             text = note.title.ifBlank { stringResource(R.string.note_untitled) },
             style = MaterialTheme.typography.titleMedium,

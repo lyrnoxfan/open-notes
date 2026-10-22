@@ -106,8 +106,8 @@ internal class SettingsActions(
  * Settings (§4.3, §9.6).
  *
  * Six sections in a fixed order - app lock, local backup, WebDAV, import, backup status, about.
- * Sections are separated by whitespace and a 1dp rule rather than stacked cards: a card per
- * setting turns a quiet page into a pile of boxes.
+ * Related settings share inset rounded groups, separated by whitespace and a quiet hairline.
+ * Individual fields are not wrapped in redundant nested cards.
  *
  * Backup status lives in its own section instead of being repeated under each destination,
  * because "backup failed" is useless without knowing which destination failed and why - and
@@ -420,12 +420,7 @@ internal fun SettingsContent(
     }
 }
 
-/**
- * A settings section: a serif title, a hairline, then its content.
- *
- * The rule is the only separator. There is no card, no elevation and no background fill, so the
- * page keeps one plane and the eye follows the type.
- */
+/** Inset, rounded settings groups with a quiet hairline and clear section hierarchy. */
 @Composable
 private fun SettingsSection(
     title: String,
@@ -443,7 +438,7 @@ private fun SettingsSection(
         )
         HorizontalDivider(
             modifier = Modifier.padding(top = 8.dp),
-            thickness = 1.dp,
+            thickness = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant,
         )
         Column(

@@ -7,8 +7,8 @@ adb install -r -t app/build/outputs/apk/androidTest/debug/app-debug-androidTest.
 adb shell am instrument -w -e class com.example.privatenotes.UiPalettePreviewTest \
   com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/ui-render.txt 2>&1
 cat build/ui-render.txt
-grep -q 'OK (6 tests)' build/ui-render.txt
-for name in list-light list-dark editor-light editor-dark list-large-narrow editor-large-narrow; do
+grep -q 'OK (10 tests)' build/ui-render.txt
+for name in list-light list-dark editor-light editor-dark list-large-narrow editor-large-narrow settings-light settings-dark trash-light trash-dark; do
   target="app/build/ui-previews/$name.png"
   # adb may return 0 for run-as failures: the PNG decoder below is mandatory.
   adb exec-out run-as com.example.privatenotes cat "files/ui-previews/$name.png" > "$target"

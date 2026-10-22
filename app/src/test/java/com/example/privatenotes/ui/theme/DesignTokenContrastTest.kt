@@ -29,6 +29,7 @@ class DesignTokenContrastTest {
             Pair("$scheme body/muted", t.textPrimary, t.surfaceMuted, BODY),
             Pair("$scheme secondary/page", t.textSecondary, t.background, TEXT),
             Pair("$scheme secondary/card", t.textSecondary, t.surface, TEXT),
+            Pair("$scheme secondary/mist", t.textSecondary, t.surfaceMuted, TEXT),
             Pair("$scheme accent/page", t.accent, t.background, TEXT),
             Pair("$scheme accent/card", t.accent, t.surface, TEXT),
             Pair("$scheme onAccent/accent", t.onAccent, t.accent, TEXT),

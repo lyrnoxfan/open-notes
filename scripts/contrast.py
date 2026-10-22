@@ -23,6 +23,7 @@ PAIRS = [
     ("textPrimary", "surfaceMuted", "正文 / 弱底", 7.0),
     ("textSecondary", "background", "次要文字 / 页面底色", 4.5),
     ("textSecondary", "surface", "次要文字 / 卡片底", 4.5),
+    ("textSecondary", "surfaceMuted", "次要文字 / 雾蓝底", 4.5),
     ("accent", "background", "强调文字 / 页面底色", 4.5),
     ("accent", "surface", "强调文字 / 卡片底", 4.5),
     ("onAccent", "accent", "强调按钮上的文字", 4.5),
