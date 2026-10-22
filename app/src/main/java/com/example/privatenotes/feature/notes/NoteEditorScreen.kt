@@ -69,6 +69,8 @@ import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import android.os.SystemClock
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.foundation.ScrollState
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -133,6 +135,30 @@ fun NoteEditorScreen(
 }
 
 /**
+ * A ScrollState that ignores programmatic scroll requests while the viewport is settling
+ * (keyboard animating). BasicTextField's native cursor-following fires immediately on tap,
+ * using the pre-animation viewport to compute its target - that stale computation is the
+ * first-tap pan. User drags are unaffected (they don't go through scrollTo/animateScrollTo).
+ * The settle-aware effect in EditorBody runs after the gate opens and performs the one true
+ * scroll, if any is needed.
+ */
+private class GatedScrollState(
+    private val isSettling: () -> Boolean,
+) : ScrollState(0) {
+    override suspend fun scrollTo(value: Int) {
+        if (!isSettling()) super.scrollTo(value)
+    }
+
+    override suspend fun animateScrollTo(
+        value: Int,
+        animationSpec: AnimationSpec<Float>,
+        initialVelocity: Float,
+    ) {
+        if (!isSettling()) super.animateScrollTo(value, animationSpec, initialVelocity)
+    }
+}
+
+/**
  * The editor as a pure function of its state, so every combination can be previewed: empty,
  * long, preview mode, saving, failed.
  */
@@ -179,7 +205,13 @@ internal fun EditorContent(
 
     // One body scroll state for the whole screen: EditorBody leaves composition when the preview
     // is shown, and a remember inside it would silently reset the reader to the top on return.
-    val bodyScrollState = rememberScrollState()
+    // Gated: while the keyboard animates the viewport, programmatic scrolls (the field's native
+    // cursor-following firing on stale geometry) are dropped; the settle-aware effect below does
+    // the one true scroll after. User drags are never gated.
+    var lastViewportChange by remember { mutableLongStateOf(0L) }
+    val bodyScrollState = remember {
+        GatedScrollState { SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS }
+    }
 
     // One-way sync from the ViewModel: only when the text actually changed underneath the field
     // (first load, an import, another screen's edit) and never while a composition is open - that
@@ -345,6 +377,12 @@ internal fun EditorContent(
                                     onContentChange(value.text)
                                 },
                                 scrollState = bodyScrollState,
+                                onViewportChanged = {
+                                    lastViewportChange = SystemClock.uptimeMillis()
+                                },
+                                isViewportSettling = {
+                                    SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS
+                                },
                             )
                         }
                     }
@@ -389,6 +427,8 @@ private fun EditorBody(
     value: TextFieldValue,
     onValueChange: (TextFieldValue) -> Unit,
     scrollState: ScrollState,
+    onViewportChanged: () -> Unit,
+    isViewportSettling: () -> Boolean,
 ) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -400,10 +440,6 @@ private fun EditorBody(
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var viewportHeight by remember { mutableStateOf(0) }
     var focused by remember { mutableStateOf(false) }
-    // When the viewport last changed size. While the keyboard animates the height moves every
-    // frame; chasing each intermediate value restarts the scroll below mid-flight, which is
-    // the visible flash when tapping text. We wait for it to settle instead.
-    var lastViewportChange by remember { mutableLongStateOf(0L) }
     // Scroll target currently being animated toward. Restarting animateScrollTo for the same
     // target cancels it mid-flight and re-starts it - also a flash. Let it finish instead.
     var activeTarget by remember { mutableStateOf<Int?>(null) }
@@ -437,7 +473,7 @@ private fun EditorBody(
         // If the viewport moved recently the keyboard is still animating. Each new height cancels
         // this run and starts a fresh wait, so only the settled height ever scrolls: one smooth
         // motion instead of an animation fighting every frame.
-        while (SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS) {
+        while (isViewportSettling()) {
             delay(50)
         }
         // Read the value *after* the wait: the tap's selection lands in bodyValue while this
@@ -477,7 +513,7 @@ private fun EditorBody(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged {
-                if (it.height != viewportHeight) lastViewportChange = SystemClock.uptimeMillis()
+                if (it.height != viewportHeight) onViewportChanged()
                 viewportHeight = it.height
             }
             .verticalScroll(scrollState)
