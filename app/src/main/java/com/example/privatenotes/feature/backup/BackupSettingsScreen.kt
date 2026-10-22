@@ -132,6 +132,8 @@ fun BackupSettingsScreen(
                     Text(
                         text = stringResource(R.string.backup_title),
                         style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
@@ -364,7 +366,7 @@ private fun LocalBackupSection(
                             R.string.backup_choose_directory
                         },
                     ),
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -374,7 +376,7 @@ private fun LocalBackupSection(
                     enabled = !state.busy && state.canBackupLocal,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(stringResource(R.string.backup_backup_now), maxLines = 1)
+                    Text(stringResource(R.string.backup_backup_now), maxLines = 2)
                 }
             }
         }
@@ -453,14 +455,14 @@ private fun WebDavSection(
                 enabled = !state.busy,
                 modifier = Modifier.weight(1f),
             ) {
-                Text(stringResource(R.string.backup_save), maxLines = 1)
+                Text(stringResource(R.string.backup_save), maxLines = 2)
             }
             OutlinedButton(
                 onClick = onTest,
                 enabled = !state.busy,
                 modifier = Modifier.weight(1f),
             ) {
-                Text(stringResource(R.string.backup_test_connection), maxLines = 1)
+                Text(stringResource(R.string.backup_test_connection), maxLines = 2)
             }
         }
         Button(

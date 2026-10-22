@@ -1,5 +1,8 @@
 package com.example.privatenotes.ui.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -17,6 +20,9 @@ import com.example.privatenotes.feature.notes.NoteListViewModel
 import com.example.privatenotes.feature.trash.TrashScreen
 import com.example.privatenotes.feature.trash.TrashViewModel
 
+/** design.md §7: two durations only. */
+private const val MOTION_SCREEN_MS = 150
+
 object Routes {
     const val NOTES = "notes"
     const val TRASH = "trash"
@@ -33,7 +39,16 @@ object Routes {
 fun AppNavigation(container: AppContainer) {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = Routes.NOTES) {
+    // design.md §7: screens cross-fade in 150ms. The default slide would be a second motion
+    // vocabulary on a page that has none.
+    NavHost(
+        navController = navController,
+        startDestination = Routes.NOTES,
+        enterTransition = { fadeIn(tween(MOTION_SCREEN_MS)) },
+        exitTransition = { fadeOut(tween(MOTION_SCREEN_MS)) },
+        popEnterTransition = { fadeIn(tween(MOTION_SCREEN_MS)) },
+        popExitTransition = { fadeOut(tween(MOTION_SCREEN_MS)) },
+    ) {
         composable(Routes.NOTES) {
             val listViewModel: NoteListViewModel = viewModel(
                 factory = NoteListViewModel.factory(

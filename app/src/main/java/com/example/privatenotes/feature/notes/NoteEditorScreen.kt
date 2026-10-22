@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -310,16 +312,19 @@ private fun EditorBody(
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TagEditorRow(
     tags: List<EditorTag>,
     onAdd: () -> Unit,
     onRemove: (EditorTag) -> Unit,
 ) {
-    Row(
+    // Wraps rather than scrolls: at fontScale 2.0 four pills do not fit on one line, and a row
+    // that silently hides the last tag is worse than a second line.
+    FlowRow(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.Start),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TagPill(text = stringResource(R.string.editor_add_tag), onClick = onAdd)
         tags.forEach { tag ->

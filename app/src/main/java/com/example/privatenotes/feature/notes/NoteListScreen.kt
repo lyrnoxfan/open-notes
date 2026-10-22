@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -107,6 +108,8 @@ fun NoteListScreen(
                     Text(
                         text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 actions = {
@@ -197,6 +200,11 @@ fun NoteListScreen(
                         ) {
                             items(state.notes, key = { it.note.id }) { entry ->
                                 SwipeableNoteRow(
+                                    modifier = Modifier.animateItem(
+                                        fadeInSpec = tween(MOTION_LIST_MS),
+                                        placementSpec = tween(MOTION_LIST_MS),
+                                        fadeOutSpec = tween(MOTION_LIST_MS),
+                                    ),
                                     entry = entry,
                                     onClick = { onOpenNote(entry.note.id) },
                                     onDelete = {
@@ -302,6 +310,7 @@ private fun SwipeableNoteRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
     deleteActionLabel: String,
+    modifier: Modifier = Modifier,
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -315,6 +324,7 @@ private fun SwipeableNoteRow(
     )
 
     SwipeToDismissBox(
+        modifier = modifier,
         state = dismissState,
         enableDismissFromStartToEnd = false,
         backgroundContent = {
@@ -452,6 +462,9 @@ private fun ErrorState(message: String) {
         )
     }
 }
+
+/** design.md §7: list items move in 180ms, everything else in 150ms. */
+internal const val MOTION_LIST_MS = 180
 
 /** Stable handles for instrumented UI tests. */
 object NoteListTags {
