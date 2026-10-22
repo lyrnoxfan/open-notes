@@ -196,6 +196,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: long-document-${{ matrix.editor }}-api${{ matrix.api-level }}
-          path: build/long-document*.txt
+          path: |
+            build/long-document*.txt
+            build/long-document-evidence/**/*.png
           retention-days: 14
           if-no-files-found: ignore

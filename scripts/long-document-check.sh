@@ -15,6 +15,10 @@ for mode in default large; do
   adb shell pm clear com.example.privatenotes >/dev/null
   adb logcat -c
   adb shell am instrument -w -e class com.example.privatenotes.LongDocumentEditorTest,com.example.privatenotes.EditorInputRoundTripTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > "build/long-document-$mode.txt" 2>&1
+  mkdir -p "build/long-document-evidence/$mode"
+  for file in $(adb shell run-as com.example.privatenotes ls files/longdoc-evidence 2>/dev/null | tr -d '\r'); do
+    adb exec-out run-as com.example.privatenotes cat "files/longdoc-evidence/$file" > "build/long-document-evidence/$mode/$file"
+  done
   cat "build/long-document-$mode.txt"
   adb logcat -d -s LongDocument:I >> "build/long-document-$mode.txt"
   grep -q 'OK (4 tests)' "build/long-document-$mode.txt" || result=1

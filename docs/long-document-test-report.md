@@ -20,6 +20,10 @@ GitHub Actions run 39866403239, both Android API 26 and API 35:
 - First-screen line 5 passed. Failure logs are preserved as `long-document.txt` in the respective
   isolated-device-reports artifacts.
 
+The identical-test control in run 39868426740 additionally captures the actual jump to top on API35:
+row 31 text-origin Y moves from -430 to viewport-top 492; row 100 moves from -6092 to 492
+during IME opening. This fails the per-frame no-top-flash assertion.
+
 These baseline results establish a genuine missing interaction regression in the earlier work.
 They do not by themselves validate a repair or every detail of the user's repeated-entry cycle.
 
@@ -33,7 +37,7 @@ The current test uses 100 individually numbered Chinese/Latin lines in the real 
 4. In a separate test, open an existing note, scroll to row 100, tap for the first IME invocation,
    sample rendered text-origin coordinates on actual UI frames, and assert no jump to top.
 5. Dismiss/reopen the keyboard for the second tap. Then return to the list, reopen the same note,
-   and repeat the first-invocation cycle three times.
+   and repeat the first-invocation cycle three times at each of rows 31, 60 and 100 (nine list entries).
 6. Repeat on API 26 and 35, default geometry and 320dp width with 2x system fonts. Insets animations
    are enabled in the comparison run. A control restores only the baseline production editor,
    leaving the new tests identical.

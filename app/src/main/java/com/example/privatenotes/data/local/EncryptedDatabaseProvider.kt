@@ -3,14 +3,13 @@ package com.example.privatenotes.data.local
 import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.privatenotes.data.local.migrations.Migrations
 import com.example.privatenotes.security.DatabaseFileGuard
 import com.example.privatenotes.security.DatabaseKeyException
 import com.example.privatenotes.security.DatabaseKeyManager
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
-import net.zetetic.database.sqlcipher.SQLiteDatabaseHook
-import net.zetetic.database.sqlcipher.SQLiteConnection
 
 /**
  * The single gate through which [AppDatabase] may be built.
@@ -66,11 +65,19 @@ object EncryptedDatabaseProvider {
         DatabaseFileGuard.requireNoPlaintextDatabase(databaseFile)
 
         // A private copy: the factory may keep or clear this array; the caller keeps its own.
-        val factory = SupportOpenHelperFactory(passphrase.copyOf(), object : SQLiteDatabaseHook {
-            // Run before Room can initialize invalidation tracking or take any SQLite locks.
-            override fun preKey(connection: SQLiteConnection) = onOpenCheck()
-            override fun postKey(connection: SQLiteConnection) = Unit
-        }, false)
+        val cipherFactory = SupportOpenHelperFactory(passphrase.copyOf(), null, false)
+        // Reject a retired Room handle BEFORE SQLCipher allocates/keys a connection.
+        // Throwing inside preKey/onOpen can leave a partially initialized native connection
+        // holding a lock; subsequent legitimate handles then fail with SQLITE_BUSY.
+        val factory = SupportSQLiteOpenHelper.Factory { configuration ->
+            val helper = cipherFactory.create(configuration)
+            object : SupportSQLiteOpenHelper by helper {
+                override val writableDatabase: SupportSQLiteDatabase
+                    get() { onOpenCheck(); return helper.writableDatabase }
+                override val readableDatabase: SupportSQLiteDatabase
+                    get() { onOpenCheck(); return helper.readableDatabase }
+            }
+        }
 
         return Room.databaseBuilder(appContext, AppDatabase::class.java, fileName)
             .openHelperFactory(factory)
@@ -83,9 +90,6 @@ object EncryptedDatabaseProvider {
                     }
 
                     override fun onOpen(db: SupportSQLiteDatabase) {
-                        // A cached DAO can reopen its Room handle after close(). Reject handles
-                        // retired by the app lock before any query can read through them.
-                        onOpenCheck()
                         DatabaseFileGuard.requireEncryptedDatabase(databaseFile)
                     }
                 },

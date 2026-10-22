@@ -130,8 +130,8 @@ internal fun EditorContent(
     onAddTag: (String) -> Unit,
     onRemoveTag: (EditorTag) -> Unit,
     onBack: () -> Unit,
-    onFlush: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onFlush: () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }

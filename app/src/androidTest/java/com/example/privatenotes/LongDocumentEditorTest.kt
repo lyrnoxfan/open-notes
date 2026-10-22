@@ -82,27 +82,52 @@ class LongDocumentEditorTest {
 
     @Test fun firstImeAfterEachListEntryKeepsTheTappedLongDocumentLine() {
         openDocument()
-        for (entry in 1..3) {
-            // The reported defect resets after leaving and re-entering, not after merely
-            // hiding the keyboard in an already-focused editing session.
-            scrollToAndTapLine(100)
-            assertEquals("first tap on entry $entry", document.indexOf("第100行"), selection().start)
-            assertCursorVisible("entry $entry: first IME at row 100")
-            hideKeyboard()
-            // Tap actual glyphs, not the existing caret/selection handle (which consumes
-            // a handle tap and intentionally does not reopen the keyboard).
-            val glyph = layout().getBoundingBox(document.indexOf("第100行") + 2)
-            val point = glyph.center + textOriginInRoot() - field().fetchSemanticsNode().boundsInRoot.topLeft
-            Log.i("LongDocument", "entry $entry: second tap=$point")
-            field().performTouchInput { click(point) }
-            waitForKeyboard(true)
-            assertCursorVisible("entry $entry: second IME at unchanged row 100")
-            hideKeyboard()
-            compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
-            compose.waitForIdle()
-            compose.onNodeWithText(documentTitle).performClick()
-            compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
-            Log.i("LongDocument", "returned from list; next first tap entry=${entry + 1}")
+        for (line in listOf(31, 60, 100)) {
+            for (entry in 1..3) {
+                // Re-enter from the list every time: hiding the keyboard is not a new entry.
+                val start = scrollToAndTapLine(line)
+                assertEquals("first tap on row $line entry $entry", start, selection().start)
+                assertCursorVisible("row $line entry $entry: first IME")
+                if (entry == 1 || entry == 3) captureLiveView("row-$line-entry-$entry-first-ime")
+                hideKeyboard()
+                // Tap actual glyphs, not the existing caret/selection handle.
+                val glyph = layout().getBoundingBox(start + 2)
+                val point = glyph.center + textOriginInRoot() - field().fetchSemanticsNode().boundsInRoot.topLeft
+                Log.i("LongDocument", "row $line entry $entry: second tap=$point")
+                field().performTouchInput { click(point) }
+                waitForKeyboard(true)
+                assertCursorVisible("row $line entry $entry: second IME")
+                val insertion = selection().start
+                assertTrue("second tap still addresses row $line", insertion in start..(start + 14))
+                field().performTextInput("验")
+                assertEquals(document.replaceRange(insertion, insertion, "验"), text())
+                field().performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Backspace) }
+                assertEquals(document, text())
+                hideKeyboard()
+                compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
+                compose.waitForIdle()
+                compose.onNodeWithText(documentTitle).performClick()
+                compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
+                Log.i("LongDocument", "PASS row $line entry $entry: first/second IME and exact content after list re-entry")
+            }
+        }
+    }
+
+    /** Capture the current actual app view, not a synthetic host; retain FLAG_SECURE.
+     * The IME is a separate system window and is deliberately not included. Its visible
+     * insets and the real resized app viewport are independently asserted above.
+     */
+    private fun captureLiveView(name: String) {
+        compose.activityRule.scenario.onActivity { activity ->
+            val view = activity.window.decorView
+            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height,
+                android.graphics.Bitmap.Config.ARGB_8888)
+            view.draw(android.graphics.Canvas(bitmap))
+            val directory = java.io.File(activity.filesDir, "longdoc-evidence").apply { mkdirs() }
+            java.io.File(directory, "$name.png").outputStream().use {
+                check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it))
+            }
+            bitmap.recycle()
         }
     }
 
