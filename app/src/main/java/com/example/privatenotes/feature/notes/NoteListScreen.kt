@@ -418,9 +418,12 @@ private fun NoteRow(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (note.content.isNotBlank()) {
+        // Truncated before the regexes run and cached per note version: the list shows two lines,
+        // so stripping Markdown out of a 500 KB body on every recomposition was pure waste.
+        val excerpt = remember(note.id, note.updatedAt) { plainExcerpt(note.content) }
+        if (excerpt.isNotBlank()) {
             Text(
-                text = plainExcerpt(note.content),
+                text = excerpt,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -509,13 +512,27 @@ object NoteListTags {
     const val SETTINGS = "note_list_settings"
 }
 
-/** Excerpt without Markdown punctuation, so the list reads as text rather than source (§4.3). */
+/**
+ * Excerpt without Markdown punctuation, so the list reads as text rather than source (§4.3).
+ *
+ * The fence stripping runs first (it needs the original text to find a fence), then the string is
+ * cut to [EXCERPT_CHARS] before the punctuation regexes and the whitespace collapse. A 500 KB note
+ * used to be scanned in full, three times, to produce two visible lines.
+ */
 internal fun plainExcerpt(markdown: String): String =
     markdown
-        .replace(Regex("```[\\s\\S]*?```"), " ")
-        .replace(Regex("[#>*_`~\\[\\]()]"), "")
-        .replace(Regex("\\s+"), " ")
+        .replace(CODE_FENCE, " ")
+        .take(EXCERPT_CHARS)
+        .replace(MARKDOWN_PUNCTUATION, "")
+        .replace(WHITESPACE_RUN, " ")
         .trim()
+
+/** Two lines at 15sp are about 120 characters; 300 covers a wide screen. */
+internal const val EXCERPT_CHARS = 300
+
+private val CODE_FENCE = Regex("```[\\s\\S]*?```")
+private val MARKDOWN_PUNCTUATION = Regex("[#>*_`~\\[\\]()]")
+private val WHITESPACE_RUN = Regex("\\s+")
 
 private val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val thisYearFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("M月d日")

@@ -40,9 +40,9 @@ class PerfBaselineTest {
     fun measureBaseline() = runBlocking {
         seedIfNeeded()
 
-        measure("list_first_load") {
-            println("PERF list_rows=${app.container.noteRepository.observeActiveNotes().first().size}")
-        }
+        // A/B, interleaved and repeated: with a 12 MB database on a software renderer, a single
+        // measurement is dominated by cache state, not by the query.
+        abCompare()
         measure("search_one_term") {
             println("PERF search_rows=${app.container.noteRepository.search("会议").first().size}")
         }
@@ -97,6 +97,35 @@ class PerfBaselineTest {
         }
 
         writeResults()
+    }
+
+    /**
+     * Alternates the two list queries five times each and reports the medians.
+     *
+     * Order matters on a device with a page cache: measuring A then B once each says more about
+     * what was warm than about which query is cheaper.
+     */
+    private suspend fun abCompare() {
+        val full = ArrayList<Long>(5)
+        val summary = ArrayList<Long>(5)
+        repeat(5) { round ->
+            val t1 = System.nanoTime()
+            app.container.noteRepository.observeActiveNotes().first()
+            full += (System.nanoTime() - t1) / 1_000_000
+            val t2 = System.nanoTime()
+            app.container.noteRepository.observeSummaries().first()
+            summary += (System.nanoTime() - t2) / 1_000_000
+            println("PERF ab_round=$round full=${full.last()}ms summary=${summary.last()}ms")
+        }
+        // Written into the results file as well: `am instrument` does not reliably surface stdout
+        // from the test process, and this is the comparison the report has to quote.
+        results["median_full_notes"] = full.sorted()[2]
+        results["median_summaries"] = summary.sorted()[2]
+        results["rounds_full_notes"] = full.joinToString(",").hashCode().toLong()
+        File(app.filesDir, "perf-ab.txt").writeText(
+            "full=" + full.joinToString(",") + "\n" + "summary=" + summary.joinToString(",") + "\n",
+        )
+        println("PERF median_full_notes=${full.sorted()[2]} median_summaries=${summary.sorted()[2]}")
     }
 
     private suspend fun seedIfNeeded() {
