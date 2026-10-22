@@ -18,4 +18,15 @@ if ! grep -q "OK (2 tests)" build/ime-roundtrip.txt; then
   cat build/ime-roundtrip.txt
   result=1
 fi
+# Long documents must be exercised through actual scroll, tap and keyboard interaction.
+adb shell pm clear com.example.privatenotes >/dev/null
+adb shell settings put secure show_ime_with_hard_keyboard 1
+adb logcat -c
+adb shell am instrument -w -e class com.example.privatenotes.LongDocumentEditorTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/long-document.txt 2>&1
+cat build/long-document.txt
+adb logcat -d -s LongDocument:I >> build/long-document.txt
+if ! grep -q "OK (2 tests)" build/long-document.txt; then
+  cat build/long-document.txt
+  result=1
+fi
 exit "$result"

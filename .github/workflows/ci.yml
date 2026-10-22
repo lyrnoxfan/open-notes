@@ -141,6 +141,7 @@ jobs:
             build/e2e/*.txt
             build/canary/*.txt
             build/ime-roundtrip.txt
+            build/long-document.txt
             build/ui-render.txt
           retention-days: 14
           if-no-files-found: ignore
