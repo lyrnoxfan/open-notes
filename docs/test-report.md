@@ -194,6 +194,24 @@ BasicTextField(
 | 3 | P3 | release 有 3 个库导出的组件（均有权限保护），字面口径「只有 launcher」不成立 | 记录，未改 manifest |
 | 4 | P3 | 光标位置用 `remember`，旋转后丢失（README 未承诺，属观感问题） | 记录 |
 
+## 五、这几项测试在 CI 里怎么跑
+
+本轮新增的设备测试分两类：
+
+| 类 | 去哪跑 | 原因 |
+| --- | --- | --- |
+| `CanarySeedTest`、`E2eSeedTest`、`E2eImportVerifyTest`、`E2eFaultTest`、`E2eSlowImportTest`/`E2eAtomicityTest`、`EditorInputRoundTripTest` | **只在脚本里跑**，标了 `@ScriptDriven` | 它们写几百行数据、依赖推入私有目录的文件，其中一个还故意杀自己进程；放进共享套件会让别的测试的行数依赖执行顺序 |
+| `EditorCompositionTest` | `testDebugUnitTest`（CI 的 build job） | 纯 JVM，无副作用 |
+
+CI 的 `connectedCheck` 加了
+`-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.example.privatenotes.ScriptDriven`，
+所以那 31 个原有设备测试照旧跑，脚本驱动的这些不参与。手动跑法就是本文各节的命令。
+
+绿：<https://github.com/lyrnoxfan/open-notes/actions/runs/39713861513>（build + instrumented 均 success）。
+
+过程中被取消的一次运行（`39713700168`）是 `concurrency: cancel-in-progress` 造成的：修完标注后
+又推了一次，新推送取消了在跑的那次。
+
 ## 五、没做的事
 
 - **没有改生产代码**，包括上面 P1 的修法：按本轮约定只写失败用例与报告。
