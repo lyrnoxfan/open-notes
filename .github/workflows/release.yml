@@ -90,8 +90,10 @@ jobs:
             # Fallback: digest printed without colons (64 hex chars).
             actual=$(printf '%s' "$certs" | grep -oiE '[0-9a-f]{64}' | head -n 1 | sed -E 's/(..)/\1:/g; s/:$//' || true)
           fi
-          actual=$(printf '%s' "$actual" | tr '[:lower:]' '[:upper:]')
-          expected=$(printf '%s' "${EXPECTED_CERT_SHA256:-}" | tr '[:lower:]' '[:upper:]')
+          # Compare format-agnostically: the secret may store the digest
+          # with or without colons, either case.
+          actual=$(printf '%s' "$actual" | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          expected=$(printf '%s' "${EXPECTED_CERT_SHA256:-}" | tr -d ':' | tr '[:lower:]' '[:upper:]')
           echo "APK certificate SHA-256: $actual"
           if [ -n "$expected" ] && [ "$actual" != "$expected" ]; then
             echo "Signed with an unexpected certificate; refusing to publish."
