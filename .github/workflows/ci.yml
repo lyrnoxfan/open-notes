@@ -99,6 +99,13 @@ jobs:
           emulator-boot-timeout: 900
           script: ./gradlew --no-daemon --stacktrace connectedCheck
 
+      # Without repository admin rights the device-test log cannot be fetched over the API, but
+      # annotations are public. One annotation per failure puts the test name and its assertion
+      # message on the commit instead of inside an artifact nobody opens.
+      - name: Annotate failing tests
+        if: failure()
+        run: python3 scripts/annotate-device-failures.py
+
       - name: Upload instrumented test report
         if: always()
         uses: actions/upload-artifact@v4
