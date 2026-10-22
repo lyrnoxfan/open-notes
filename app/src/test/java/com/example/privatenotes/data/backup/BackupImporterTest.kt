@@ -140,6 +140,28 @@ class BackupImporterTest {
         assertEquals(1, target.noteDao().countActive())
     }
 
+    @Test
+    fun `the safety backup for an encrypted import is encrypted with the same password`() = runBlocking {
+        source.noteDao().insert(
+            NoteEntity(id = "n", title = "secret", content = "body", createdAt = 1L, updatedAt = 2L),
+        )
+        val bytes = archive.create("correct-password".toCharArray()).bytes
+        val directory = FakeBackupDirectory(configured = true)
+        val importer = createImporter(directory, bytes)
+
+        val outcome = importer.import(FakeDocumentSource(bytes).uri, "correct-password".toCharArray())
+
+        assertNotNull(outcome.safetyBackupFileName)
+        val safetyName = directory.files.keys.single()
+        assertTrue("an encrypted import must not leave a plaintext .json copy", safetyName.endsWith(".pnb"))
+        val body = directory.files.getValue(safetyName)
+        assertEquals("the safety copy carries the encrypted envelope", "PNBKP001", body.copyOf(8).toString(Charsets.US_ASCII))
+        assertTrue(
+            "the note text must not be readable in the safety copy",
+            !String(body, Charsets.ISO_8859_1).contains("secret"),
+        )
+    }
+
     private fun createImporter(directory: FakeBackupDirectory, bytes: ByteArray): BackupImporter {
         val localManager = LocalBackupManager(
             archive = archive,

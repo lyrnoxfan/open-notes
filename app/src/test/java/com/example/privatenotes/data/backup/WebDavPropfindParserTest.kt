@@ -71,4 +71,32 @@ class WebDavPropfindParserTest {
         assertEquals(1, files.size)
         assertEquals("a missing size reads as zero, not as an error", 0L, files[0].sizeBytes)
     }
+
+    @Test
+    fun handlesADefaultNamespaceWithoutPrefixes() {
+        val xml = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <multistatus xmlns="DAV:">
+              <response>
+                <href>/dav/notes/</href>
+                <propstat><prop><resourcetype><collection/></resourcetype></prop></propstat>
+              </response>
+              <response>
+                <href>/dav/notes/private-notes-20261021-000000.json</href>
+                <propstat><prop>
+                  <resourcetype/>
+                  <getcontentlength>4321</getcontentlength>
+                  <getlastmodified>Wed, 21 Oct 2026 00:00:00 GMT</getlastmodified>
+                </prop></propstat>
+              </response>
+              <responsedescription>shared folder</responsedescription>
+            </multistatus>
+        """.trimIndent()
+
+        val files = parsePropfindFileList(xml)
+
+        assertEquals(1, files.size)
+        assertEquals("private-notes-20261021-000000.json", files[0].fileName)
+        assertEquals(4321L, files[0].sizeBytes)
+    }
 }

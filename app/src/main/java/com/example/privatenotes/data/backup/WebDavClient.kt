@@ -402,12 +402,21 @@ private fun sha256(bytes: ByteArray): ByteArray = MessageDigest.getInstance("SHA
  * a backup are kept: a WebDAV collection is often shared with other things (a desktop sync client
  * directory, for instance), and offering every file in it for restore would be misleading.
  */
-/** Namespace-agnostic: servers use d:, D:, or no prefix at all. */
+/**
+ * Matches an opening `<response>` tag in any spelling, `<d:response>` through `<response>`,
+ * but not `<responsedescription>`, which shares its first eight letters.
+ */
+private val RESPONSE_SPLIT =
+    Regex("<(?:[A-Za-z][\\w.-]*:)?response(?=[\\s>/])", RegexOption.IGNORE_CASE)
+
+/** Namespace-agnostic, like the rest of the parser: the prefix is optional. */
 private val CONTENT_LENGTH_REGEX = Regex("""(?is)<(?:[a-z0-9]+:)?getcontentlength[^>]*>\s*(\d+)\s*<""")
 
 internal fun parsePropfindFileList(xml: String, nowMillis: Long = System.currentTimeMillis()): List<WebDavRemoteFile> {
     val entries = mutableListOf<WebDavRemoteFile>()
-    val responseBlocks = xml.split("<d:response", "<D:response", ignoreCase = true)
+    // Servers write the DAV namespace as d:, D:, or as a default namespace with no prefix at
+    // all; every pattern below accepts all three spellings.
+    val responseBlocks = RESPONSE_SPLIT.split(xml)
     for (block in responseBlocks.drop(1)) {
         val href = HREF_REGEX.find(block)?.groupValues?.getOrNull(1) ?: continue
         // java.net.URLDecoder, not android.net.Uri: this parser is also unit-tested on the JVM
@@ -431,5 +440,8 @@ private fun parseHttpDate(value: String): Long? = try {
     null
 }
 
-private val HREF_REGEX = Regex("<[dD]:href>([^<]+)</[dD]:href>")
-private val LAST_MODIFIED_REGEX = Regex("<[dD]:getlastmodified>([^<]+)</[dD]:getlastmodified>")
+private val HREF_REGEX =
+    Regex("<(?:[A-Za-z][\\w.-]*:)?href>([^<]+)</(?:[A-Za-z][\\w.-]*:)?href>")
+
+private val LAST_MODIFIED_REGEX =
+    Regex("<(?:[A-Za-z][\\w.-]*:)?getlastmodified>([^<]+)</(?:[A-Za-z][\\w.-]*:)?getlastmodified>")

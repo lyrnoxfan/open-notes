@@ -14,6 +14,10 @@ data class ImportOutcome(
  * Order matters: read and fully validate first, then take a safety backup of the current
  * database, then merge in one transaction. A rejected or corrupt file therefore never touches
  * either the database or the backup directory.
+ *
+ * The safety backup is encrypted with the import password when one was given: the user who
+ * just typed a password for a backup has said what they think a full copy of their notes
+ * should look like on disk, and a silent plaintext copy would break that.
  */
 class BackupImporter(
     private val source: BackupDocumentSource,
@@ -28,7 +32,9 @@ class BackupImporter(
 
         val safetyBackup = if (localBackupManager.isConfigured()) {
             try {
-                localBackupManager.backup(password = null).fileName
+                // A copy: the manager zeroes the array it is handed, and the password still
+                // belongs to the caller's call chain.
+                localBackupManager.backup(password?.copyOf()).fileName
             } catch (e: BackupException) {
                 throw BackupException(
                     BackupErrorKind.SAFETY_BACKUP_FAILED,

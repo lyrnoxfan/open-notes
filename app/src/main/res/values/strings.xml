@@ -154,7 +154,7 @@
     <string name="backup_remote_never">尚未上传成功</string>
 
     <string name="backup_import_pick">选择备份文件</string>
-    <string name="backup_import_hint">导入默认合并，不覆盖整个数据库。已设置本地备份目录时，导入前会先做一次明文 JSON 安全备份；任何一步失败都会回滚。</string>
+    <string name="backup_import_hint">导入默认合并，不覆盖整个数据库。已设置本地备份目录时，导入前会先做一次安全备份；导入带密码的备份时，安全备份用同一密码加密，不会留下明文副本。任何一步失败都会回滚。</string>
     <string name="backup_import_confirm_title">导入这份备份？</string>
     <string name="backup_import_confirm_body">将按更新时间合并到现有笔记。较新的本地内容会保留，旧备份不会静默覆盖它。</string>
     <string name="backup_import_confirm_action">开始导入</string>
