@@ -47,8 +47,6 @@ fun AppNavigation(container: AppContainer) {
                 onOpenNote = { noteId -> navController.navigate(Routes.editor(noteId)) },
                 onOpenTrash = { navController.navigate(Routes.TRASH) },
                 onOpenSettings = { navController.navigate(Routes.BACKUP) },
-                appLock = container.appLock,
-                authenticator = container.appLockAuthenticator,
             )
         }
 
@@ -84,6 +82,8 @@ fun AppNavigation(container: AppContainer) {
             )
             BackupSettingsScreen(
                 viewModel = backupViewModel,
+                appLock = container.appLock,
+                authenticator = container.appLockAuthenticator,
                 onBack = { navController.popBackStack() },
             )
         }

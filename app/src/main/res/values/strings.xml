@@ -17,7 +17,7 @@
     <string name="note_list_moved_to_trash">已移入回收站</string>
     <string name="note_list_no_match">没有匹配的笔记</string>
     <string name="note_list_clear_filter">清除筛选</string>
-    <string name="note_list_settings">备份与恢复</string>
+    <string name="note_list_settings">设置</string>
 
     <!-- 编辑 -->
     <string name="editor_title_hint">标题</string>
@@ -75,14 +75,22 @@
     <!-- 应用锁设置 -->
     <string name="note_list_more">更多</string>
     <string name="app_lock_settings">应用锁</string>
-    <string name="app_lock_settings_title">应用锁</string>
     <string name="app_lock_settings_switch">开启应用锁</string>
     <string name="app_lock_settings_summary">离开应用超过 30 秒后，重新进入需要指纹或设备密码。</string>
     <string name="app_lock_settings_unavailable">设备未设置锁屏密码，无法开启应用锁。</string>
-    <string name="app_lock_settings_close">完成</string>
     <!-- 备份与恢复 -->
-    <string name="backup_title">备份与恢复</string>
+    <string name="backup_title">设置</string>
     <string name="backup_back">返回</string>
+    <string name="settings_section_lock">应用锁</string>
+    <string name="settings_section_status">备份状态</string>
+    <string name="settings_section_about">关于</string>
+    <string name="settings_about_version">版本</string>
+    <string name="settings_about_font">正文字体</string>
+    <string name="settings_about_font_value">霞鹜文楷 Regular（GB2312 子集）</string>
+    <string name="settings_about_font_licence">查看字体许可（SIL OFL 1.1）</string>
+    <string name="settings_about_font_licence_title">霞鹜文楷许可</string>
+    <string name="settings_about_font_licence_missing">许可文件缺失。</string>
+    <string name="settings_about_encryption">笔记存放在本机的 SQLCipher 加密数据库中，密钥由系统 Keystore 保护的随机口令解开；卸载应用即失去密钥。</string>
     <string name="backup_section_local">本地备份</string>
     <string name="backup_section_remote">WebDAV 备份</string>
     <string name="backup_section_import">导入备份</string>

@@ -23,13 +23,9 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DeleteSweep
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -70,9 +66,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.privatenotes.R
 import com.example.privatenotes.data.local.NoteWithTags
-import com.example.privatenotes.feature.lock.LockSettingsDialog
-import com.example.privatenotes.security.AppLock
-import com.example.privatenotes.security.AppLockAuthenticator
 import com.example.privatenotes.ui.components.TagFilterRow
 import com.example.privatenotes.ui.components.TagLabelRow
 import com.example.privatenotes.ui.components.readingWidth
@@ -98,15 +91,11 @@ fun NoteListScreen(
     onOpenNote: (String) -> Unit,
     onOpenTrash: () -> Unit,
     onOpenSettings: () -> Unit,
-    appLock: AppLock,
-    authenticator: AppLockAuthenticator,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var menuOpen by remember { mutableStateOf(false) }
-    var lockSettingsOpen by remember { mutableStateOf(false) }
     val undoLabel = stringResource(R.string.note_list_undo)
     val deletedLabel = stringResource(R.string.note_list_moved_to_trash)
 
@@ -135,36 +124,6 @@ fun NoteListScreen(
                             imageVector = Icons.Outlined.DeleteSweep,
                             contentDescription = stringResource(R.string.note_list_trash),
                         )
-                    }
-                    Box {
-                        IconButton(
-                            onClick = { menuOpen = true },
-                            modifier = Modifier.testTag(NoteListTags.MORE),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.MoreVert,
-                                contentDescription = stringResource(R.string.note_list_more),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false },
-                            containerColor = MaterialTheme.colorScheme.surface,
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.app_lock_settings)) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Lock,
-                                        contentDescription = null,
-                                    )
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    lockSettingsOpen = true
-                                },
-                            )
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -269,14 +228,6 @@ fun NoteListScreen(
         }
     }
 
-    // §6.2: one dialog, opened from the overflow until the settings screen carries the switch.
-    if (lockSettingsOpen) {
-        LockSettingsDialog(
-            lock = appLock,
-            authenticator = authenticator,
-            onDismiss = { lockSettingsOpen = false },
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

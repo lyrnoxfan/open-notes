@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -21,9 +20,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -59,20 +58,30 @@ import com.example.privatenotes.data.backup.BackupErrorKind
 import com.example.privatenotes.data.backup.BackupFailure
 import com.example.privatenotes.data.backup.BackupFileKind
 import com.example.privatenotes.data.backup.ImportOutcome
+import com.example.privatenotes.feature.lock.AppLockSection
+import com.example.privatenotes.security.AppLock
+import com.example.privatenotes.security.AppLockAuthenticator
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Backup settings and status (§9.6).
+ * Settings (§4.3, §9.6).
  *
- * The page shows the directory, both last-success times and both last failures separately,
- * because "backup failed" is useless without knowing which destination failed and why.
+ * Six sections in a fixed order - app lock, local backup, WebDAV, import, backup status, about.
+ * Sections are separated by whitespace and a 1dp rule rather than stacked cards: a card per
+ * setting turns a quiet page into a pile of boxes.
+ *
+ * Backup status lives in its own section instead of being repeated under each destination,
+ * because "backup failed" is useless without knowing which destination failed and why - and
+ * because the two are read together, not separately.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackupSettingsScreen(
     viewModel: BackupSettingsViewModel,
+    appLock: AppLock,
+    authenticator: AppLockAuthenticator,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -145,15 +154,21 @@ fun BackupSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
         ) {
             if (state.busy) {
                 item {
                     LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                         color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
                     )
+                }
+            }
+
+            item {
+                SettingsSection(title = stringResource(R.string.settings_section_lock)) {
+                    AppLockSection(lock = appLock, authenticator = authenticator)
                 }
             }
 
@@ -186,7 +201,11 @@ fun BackupSettingsScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.heightIn(min = 8.dp))
+                StatusSection(state = state)
+            }
+
+            item {
+                AboutSection()
             }
         }
     }
@@ -232,7 +251,12 @@ fun BackupSettingsScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         pending.info.displayName?.let {
-                            Text(it, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         Text(stringResource(R.string.backup_import_confirm_body))
                     }
@@ -256,44 +280,73 @@ fun BackupSettingsScreen(
     }
 }
 
+/**
+ * A settings section: a serif title, a hairline, then its content.
+ *
+ * The rule is the only separator. There is no card, no elevation and no background fill, so the
+ * page keeps one plane and the eye follows the type.
+ */
+@Composable
+private fun SettingsSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(top = 8.dp),
+            thickness = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+        Column(
+            modifier = Modifier.padding(top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
+    }
+}
+
+/** A short line of explanation under a control; never a paragraph. */
+@Composable
+private fun SectionHint(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
 @Composable
 private fun LocalBackupSection(
     state: BackupSettingsUiState,
     onChooseDirectory: () -> Unit,
     onBackupNow: () -> Unit,
 ) {
-    BackupSection(title = stringResource(R.string.backup_section_local)) {
+    SettingsSection(title = stringResource(R.string.backup_section_local)) {
         when {
-            !state.localConfigured -> Text(
-                text = stringResource(R.string.backup_local_none),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            !state.localConfigured -> SectionHint(stringResource(R.string.backup_local_none))
 
             else -> {
                 Text(
                     text = state.localDirectoryLabel ?: stringResource(R.string.backup_local_none),
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (!state.localAuthorized) {
                     Text(
                         text = stringResource(R.string.backup_local_permission_lost),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
             }
         }
-
-        BackupStatusBlock(
-            lastSuccessAt = state.localLastSuccessAt,
-            lastFailure = state.localLastFailure,
-            workState = if (state.localConfigured) state.localWorkState else null,
-            neverText = stringResource(R.string.backup_never),
-        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
@@ -326,11 +379,7 @@ private fun LocalBackupSection(
             }
         }
 
-        Text(
-            text = stringResource(R.string.backup_local_hint),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        SectionHint(stringResource(R.string.backup_local_hint))
     }
 }
 
@@ -345,13 +394,9 @@ private fun WebDavSection(
     onTest: () -> Unit,
     onUploadNow: () -> Unit,
 ) {
-    BackupSection(title = stringResource(R.string.backup_section_remote)) {
+    SettingsSection(title = stringResource(R.string.backup_section_remote)) {
         if (!state.remoteConfigured) {
-            Text(
-                text = stringResource(R.string.backup_remote_none),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            SectionHint(stringResource(R.string.backup_remote_none))
         }
 
         OutlinedTextField(
@@ -426,18 +471,7 @@ private fun WebDavSection(
             Text(stringResource(R.string.backup_upload_now))
         }
 
-        BackupStatusBlock(
-            lastSuccessAt = state.remoteLastSuccessAt,
-            lastFailure = state.remoteLastFailure,
-            workState = if (state.remoteConfigured) state.remoteWorkState else null,
-            neverText = stringResource(R.string.backup_remote_never),
-        )
-
-        Text(
-            text = stringResource(R.string.backup_webdav_hint),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        SectionHint(stringResource(R.string.backup_webdav_hint))
     }
 }
 
@@ -446,48 +480,45 @@ private fun ImportSection(
     state: BackupSettingsUiState,
     onPickFile: () -> Unit,
 ) {
-    BackupSection(title = stringResource(R.string.backup_section_import)) {
-        Button(
+    SettingsSection(title = stringResource(R.string.backup_section_import)) {
+        OutlinedButton(
             onClick = onPickFile,
             enabled = !state.busy,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onBackground,
+            ),
         ) {
             Text(stringResource(R.string.backup_import_pick))
         }
-        Text(
-            text = stringResource(R.string.backup_import_hint),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        SectionHint(stringResource(R.string.backup_import_hint))
+    }
+}
+
+/** Both destinations, side by side in reading order: success first, then the last failure. */
+@Composable
+private fun StatusSection(state: BackupSettingsUiState) {
+    SettingsSection(title = stringResource(R.string.settings_section_status)) {
+        StatusLine(
+            label = stringResource(R.string.backup_section_local),
+            lastSuccessAt = state.localLastSuccessAt,
+            lastFailure = state.localLastFailure,
+            workState = if (state.localConfigured) state.localWorkState else null,
+            neverText = stringResource(R.string.backup_never),
+        )
+        StatusLine(
+            label = stringResource(R.string.backup_section_remote),
+            lastSuccessAt = state.remoteLastSuccessAt,
+            lastFailure = state.remoteLastFailure,
+            workState = if (state.remoteConfigured) state.remoteWorkState else null,
+            neverText = stringResource(R.string.backup_remote_never),
         )
     }
 }
 
 @Composable
-private fun BackupSection(
-    title: String,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = MaterialTheme.shapes.large,
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            content()
-        }
-    }
-}
-
-@Composable
-private fun BackupStatusBlock(
+private fun StatusLine(
+    label: String,
     lastSuccessAt: Long?,
     lastFailure: BackupFailure?,
     workState: WorkInfo.State?,
@@ -495,33 +526,126 @@ private fun BackupStatusBlock(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
             text = if (lastSuccessAt != null) {
                 stringResource(R.string.backup_last_success, formatBackupTimestamp(lastSuccessAt))
             } else {
                 neverText
             },
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         lastFailure?.let { failure ->
             Text(
                 text = stringResource(R.string.backup_last_failure, formatBackupTimestamp(failure.at)),
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
             )
             Text(
                 text = backupErrorText(failure.kind, failure.detail),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
         }
         workState?.let {
             Text(
                 text = stringResource(R.string.backup_current_state, workStateText(it)),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * Version, the font the app reads in, and what protects the notes.
+ *
+ * The licence text is read from assets when it is opened rather than bundled as a string: the
+ * OFL is 90 lines and has no business being a translatable resource.
+ */
+@Composable
+private fun AboutSection() {
+    val context = LocalContext.current
+    var licenceOpen by remember { mutableStateOf(false) }
+    val versionName = remember(context) {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "—"
+    }
+    val licence = remember(context) {
+        runCatching {
+            context.assets.open(LICENCE_ASSET).bufferedReader().use { it.readText() }
+        }.getOrDefault("")
+    }
+
+    SettingsSection(title = stringResource(R.string.settings_section_about)) {
+        AboutRow(
+            label = stringResource(R.string.settings_about_version),
+            value = versionName,
+        )
+        AboutRow(
+            label = stringResource(R.string.settings_about_font),
+            value = stringResource(R.string.settings_about_font_value),
+        )
+        TextButton(
+            onClick = { licenceOpen = true },
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Text(stringResource(R.string.settings_about_font_licence))
+        }
+        SectionHint(stringResource(R.string.settings_about_encryption))
+    }
+
+    if (licenceOpen) {
+        AlertDialog(
+            onDismissRequest = { licenceOpen = false },
+            title = { Text(stringResource(R.string.settings_about_font_licence_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        text = licence.ifEmpty { stringResource(R.string.settings_about_font_licence_missing) },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { licenceOpen = false }) {
+                    Text(stringResource(R.string.dialog_confirm))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun AboutRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -551,6 +675,7 @@ private fun EncryptedBackupDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(R.string.backup_encryption_switch),
+                        style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )
                     Switch(
@@ -635,7 +760,7 @@ private fun PasswordPromptDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(body)
+                Text(body, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
@@ -770,3 +895,5 @@ private fun formatBackupTimestamp(epochMillis: Long): String =
     backupTimestampFormatter.format(Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()))
 
 private const val MIN_PASSWORD_LENGTH = 8
+
+private const val LICENCE_ASSET = "licenses/lxgw-wenkai-OFL.txt"
