@@ -15,7 +15,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.PrivateNotes">
+        android:theme="@style/Theme.PrivateNotes"
+        android:enableOnBackInvokedCallback="true">
 
         <activity
             android:name=".MainActivity"
