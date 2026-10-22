@@ -35,7 +35,7 @@ PAIRS = [
 
 
 def parse_tokens(source: str, scheme: str) -> dict[str, tuple[int, int, int]]:
-    block = re.search(rf"object {scheme} \{{(.*?)\n    \}}", source, re.S)
+    block = re.search(rf"object {scheme}(?:\s*:\s*\w+)? \{{(.*?)\n    \}}", source, re.S)
     if block is None:
         raise SystemExit(f"could not find DesignTokens.{scheme} in {COLOR_KT}")
     tokens = {}
