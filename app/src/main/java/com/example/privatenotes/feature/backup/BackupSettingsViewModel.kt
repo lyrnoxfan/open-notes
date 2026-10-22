@@ -14,6 +14,7 @@ import com.example.privatenotes.data.backup.BackupDocumentInfo
 import com.example.privatenotes.data.backup.BackupErrorKind
 import com.example.privatenotes.data.backup.BackupException
 import com.example.privatenotes.data.backup.BackupFileKind
+import com.example.privatenotes.data.backup.BackupFileNames
 import com.example.privatenotes.data.backup.BackupImporter
 import com.example.privatenotes.data.backup.BackupScheduler
 import com.example.privatenotes.data.backup.BackupStatus
@@ -61,6 +62,8 @@ data class RemoteFileRow(
 data class PendingImport(
     val uri: Uri,
     val info: BackupDocumentInfo,
+    /** Set when the file was staged in the cache by a remote restore; deleted when done. */
+    val stagedFile: File? = null,
 )
 
 data class BackupSettingsUiState(
@@ -337,6 +340,8 @@ class BackupSettingsViewModel(
                         },
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: BackupException) {
                 _state.update { it.copy(message = BackupNotice.Failure(e.kind, e.detail ?: e.message)) }
             } catch (e: Exception) {
@@ -355,7 +360,10 @@ class BackupSettingsViewModel(
      * Downloads one remote backup into the cache and hands it to the normal import path.
      *
      * The merge rules are the importer's, unchanged: this only removes the "export to a file and
-     * pick it with the file picker" step.
+     * pick it with the file picker" step. The pick in the remote-files dialog is the
+     * confirmation, and a password typed there is reused for an encrypted file - asking for the
+     * same password twice in a row would only train the user to retype without thinking. A
+     * missing or wrong password falls back to the same prompt the local import flow uses.
      */
     fun downloadAndImport(fileName: String, password: CharArray?) {
         if (_state.value.busy) {
@@ -365,49 +373,69 @@ class BackupSettingsViewModel(
         _state.update { it.copy(remoteFiles = null) }
         viewModelScope.launch {
             setOperation(BackupOperation.DOWNLOADING_REMOTE)
-            val cached = try {
+            // Staging holds one restore at a time: leftovers from an abandoned flow are removed
+            // here, and the current file itself once the import reaches a terminal state.
+            clearStaging()
+            val staged = try {
                 withContext(Dispatchers.IO) {
                     val bytes = webDavBackupManager.download(fileName)
                     val file = File(cacheDirProvider(), fileName.substringAfterLast('/'))
                     file.writeBytes(bytes)
                     file
                 }
-            } catch (e: BackupException) {
+            } catch (e: CancellationException) {
                 password?.fill('\u0000')
-                _state.update { it.copy(message = BackupNotice.Failure(e.kind, e.detail ?: e.message)) }
-                setOperation(null)
-                return@launch
+                throw e
             } catch (e: Exception) {
-                password?.fill('\u0000')
-                _state.update { it.copy(message = BackupNotice.Failure(BackupErrorKind.UNKNOWN, e.message)) }
+                noticeFailure(asBackupException(e))
                 setOperation(null)
                 return@launch
             }
-            setOperation(null)
-            // Reuse inspect + confirm so a remote restore and a local one behave identically.
-            inspectImport(Uri.fromFile(cached), password)
+            try {
+                setOperation(BackupOperation.INSPECTING_IMPORT)
+                val uri = Uri.fromFile(staged)
+                val pending = PendingImport(uri, inspectInfo(uri), stagedFile = staged)
+                if (pending.info.kind == BackupFileKind.ENCRYPTED && (password == null || password.isEmpty())) {
+                    _state.update { it.copy(pendingImport = pending) }
+                    setOperation(null)
+                } else {
+                    performImport(pending, password)
+                }
+            } catch (e: CancellationException) {
+                password?.fill('\u0000')
+                throw e
+            } catch (e: Exception) {
+                noticeFailure(asBackupException(e))
+                setOperation(null)
+                runCatching { staged.delete() }
+            }
         }
     }
 
-    fun inspectImport(uri: Uri, prefilledPassword: CharArray? = null) {
+    fun inspectImport(uri: Uri) {
         if (_state.value.busy) return
         viewModelScope.launch {
             setOperation(BackupOperation.INSPECTING_IMPORT)
             try {
-                val info = withContext(Dispatchers.IO) { importer.inspect(uri) }
-                if (info.kind == BackupFileKind.UNKNOWN) {
-                    throw BackupException(
-                        BackupErrorKind.INVALID_FORMAT,
-                        "所选文件不是私密笔记备份",
-                    )
-                }
-                _state.update { it.copy(pendingImport = PendingImport(uri, info)) }
+                _state.update { it.copy(pendingImport = PendingImport(uri, inspectInfo(uri))) }
             } catch (e: Exception) {
                 noticeFailure(asBackupException(e))
             } finally {
                 setOperation(null)
             }
         }
+    }
+
+    /** Reads and validates the envelope so the UI knows whether a password is needed. */
+    private suspend fun inspectInfo(uri: Uri): BackupDocumentInfo {
+        val info = withContext(Dispatchers.IO) { importer.inspect(uri) }
+        if (info.kind == BackupFileKind.UNKNOWN) {
+            throw BackupException(
+                BackupErrorKind.INVALID_FORMAT,
+                "所选文件不是私密笔记备份",
+            )
+        }
+        return info
     }
 
     fun confirmImport(password: CharArray?) {
@@ -422,28 +450,51 @@ class BackupSettingsViewModel(
         // Close the dialog before the merge: it can take a while, and leaving an enabled
         // "import" button over a running transaction invites a second press.
         _state.update { it.copy(pendingImport = null) }
-        viewModelScope.launch {
-            setOperation(BackupOperation.IMPORTING)
-            try {
-                val outcome = withContext(Dispatchers.IO) { importer.import(pending.uri, password) }
-                _state.update {
-                    it.copy(
-                        importReport = outcome,
-                        message = BackupNotice.Info("导入完成"),
-                    )
-                }
-            } catch (e: Exception) {
-                val failure = asBackupException(e)
-                if (failure.kind == BackupErrorKind.WRONG_PASSWORD_OR_CORRUPT &&
-                    pending.info.kind == BackupFileKind.ENCRYPTED
-                ) {
-                    // Let the user retype a mistyped password without re-picking the file.
-                    _state.update { it.copy(pendingImport = pending) }
-                }
-                noticeFailure(failure)
-            } finally {
-                password?.fill('\u0000')
-                setOperation(null)
+        viewModelScope.launch { performImport(pending, password) }
+    }
+
+    /**
+     * Runs the merge for one pending import.
+     *
+     * Returns true when the flow reached a terminal state - success, or a failure retyping
+     * cannot fix - and false when the password was wrong and the prompt has been put back up
+     * for another attempt against the same file.
+     */
+    private suspend fun performImport(pending: PendingImport, password: CharArray?): Boolean {
+        setOperation(BackupOperation.IMPORTING)
+        val terminal = try {
+            val outcome = withContext(Dispatchers.IO) { importer.import(pending.uri, password) }
+            _state.update {
+                it.copy(
+                    importReport = outcome,
+                    message = BackupNotice.Info("导入完成"),
+                )
+            }
+            true
+        } catch (e: Exception) {
+            val failure = asBackupException(e)
+            val retypeable = failure.kind == BackupErrorKind.WRONG_PASSWORD_OR_CORRUPT &&
+                pending.info.kind == BackupFileKind.ENCRYPTED
+            if (retypeable) {
+                // Let the user retype a mistyped password without re-picking the file.
+                _state.update { it.copy(pendingImport = pending) }
+            }
+            noticeFailure(failure)
+            !retypeable
+        } finally {
+            password?.fill('\u0000')
+            setOperation(null)
+        }
+        // A downloaded backup lives only until its flow ends; a retype keeps the file.
+        if (terminal) pending.stagedFile?.let { staged -> runCatching { staged.delete() } }
+        return terminal
+    }
+
+    /** The staging directory only ever holds downloaded restore files; keep nothing stale. */
+    private fun clearStaging() {
+        cacheDirProvider().listFiles()?.forEach { file ->
+            if (file.isFile && BackupFileNames.isBackupFile(file.name)) {
+                runCatching { file.delete() }
             }
         }
     }
