@@ -29,4 +29,22 @@ if ! grep -q "OK (2 tests)" build/long-document.txt; then
   cat build/long-document.txt
   result=1
 fi
+# Repeat at an explicit 320dp width and 2x font scale. This is the real MainActivity
+# with the same security flags and soft keyboard, not the synthetic preview host.
+adb shell am force-stop com.example.privatenotes
+adb shell wm size 640x1280
+adb shell wm density 320
+adb shell settings put system font_scale 2.0
+adb shell pm clear com.example.privatenotes >/dev/null
+adb logcat -c
+adb shell am instrument -w -e class com.example.privatenotes.LongDocumentEditorTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/long-document-large.txt 2>&1
+cat build/long-document-large.txt
+adb logcat -d -s LongDocument:I >> build/long-document-large.txt
+adb shell settings put system font_scale 1.0
+adb shell wm size reset
+adb shell wm density reset
+if ! grep -q "OK (2 tests)" build/long-document-large.txt; then
+  cat build/long-document-large.txt
+  result=1
+fi
 exit "$result"

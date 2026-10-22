@@ -18,6 +18,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.input.TextFieldDecorator
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.flow.drop
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
@@ -42,7 +53,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,7 +64,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -151,35 +160,33 @@ internal fun EditorContent(
         }
     }
 
-    // The text field's value is owned here, not rebuilt from the ViewModel's string on every
-    // frame. Rebuilding it was what dropped an IME composition: TextFieldValue(text, selection)
-    // carries no composition, and the editor rebuilt on every keystroke (docs/test-report.md P1).
-    // rememberSaveable, so the caret and the composing buffer also survive a configuration change;
-    // EditorContent stays composed while the preview is toggled, so they survive that too.
-    //
-    // No caret is planted on open. Nobody has tapped yet, so there is no caret to restore, and a
-    // made-up one is not harmless: TextFieldValue(text, TextRange(content.length)) put it at the
-    // end of the note, and anything that read the selection before the first tap landed (the
-    // scroll effect waiting out the IME animation) computed "scroll to the bottom" from it. The
-    // default selection is the document start, which is also where the view opens.
-    var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(state.content))
+    // One editing buffer owns text, selection and IME composition, independent of Room's
+    // asynchronous String snapshots. The state-based field exposes its real scroll state and
+    // does not issue the legacy field's stale selection-at-focus bring-into-view request.
+    val bodyState = rememberTextFieldState(state.content, TextRange.Zero)
+    val currentOnContentChange by rememberUpdatedState(onContentChange)
+    LaunchedEffect(bodyState) {
+        snapshotFlow { bodyState.text.toString() }.drop(1).collect { currentOnContentChange(it) }
     }
-
-    // No scroll state lives here any more. BasicTextField already scrolls itself
-    // (TextFieldScrollerPosition / textFieldScrollable inside CoreTextField) to keep the caret in
-    // view, including when the keyboard resizes the viewport. Wrapping it in our own
-    // verticalScroll() put two scroll owners on the same axis, and every "fix" after that - the
-    // settle wait, the target snapshots, the restore of the pre-animation position - was one
-    // more actor racing the native one. That race is the sub-second jump-to-bottom-and-back.
-
-    // One-way sync from the ViewModel: only when the text actually changed underneath the field
-    // (first load, an import, another screen's edit) and never while a composition is open - that
-    // would throw away what the IME is in the middle of.
-    LaunchedEffect(state.content) {
-        if (bodyValue.composition == null && bodyValue.text != state.content) {
-            bodyValue = TextFieldValue(state.content)
+    // Load once. Saved String echoes must never replace a newer editing buffer or reset its
+    // selection/composition; edits flow out of TextFieldState, not back into it on each save.
+    var bodyLoaded by remember { mutableStateOf(state.isLoaded) }
+    LaunchedEffect(state.isLoaded) {
+        if (state.isLoaded && !bodyLoaded) {
+            bodyState.edit {
+                replace(0, length, state.content)
+                selection = TextRange.Zero
+            }
+            bodyLoaded = true
         }
+    }
+    androidx.activity.compose.BackHandler {
+        onContentChange(bodyState.text.toString())
+        onBack()
+    }
+    // A back press/disposal must never outrun the snapshot observer's final keystroke.
+    DisposableEffect(bodyState) {
+        onDispose { currentOnContentChange(bodyState.text.toString()) }
     }
 
     if (tagDialogOpen) {
@@ -200,6 +207,7 @@ internal fun EditorContent(
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
+                    onContentChange(bodyState.text.toString())
                     onDelete()
                 }) {
                     Text(
@@ -221,7 +229,10 @@ internal fun EditorContent(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        onContentChange(bodyState.text.toString())
+                        onBack()
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = stringResource(R.string.editor_back),
@@ -242,7 +253,10 @@ internal fun EditorContent(
                     )
                 },
                 actions = {
-                    IconButton(onClick = onTogglePreview) {
+                    IconButton(onClick = {
+                        onContentChange(bodyState.text.toString())
+                        onTogglePreview()
+                    }) {
                         Icon(
                             imageVector = Icons.Outlined.Visibility,
                             contentDescription = stringResource(
@@ -279,6 +293,7 @@ internal fun EditorContent(
                             onClick = {
                                 menuOpen = false
                                 if (state.trashEnabled) {
+                                    onContentChange(bodyState.text.toString())
                                     onDelete()
                                 } else {
                                     // The trash is off: this delete is permanent and irreversible.
@@ -330,13 +345,7 @@ internal fun EditorContent(
                                     .testTag(EditorTags.PREVIEW),
                             )
                         } else {
-                            EditorBody(
-                                value = bodyValue,
-                                onValueChange = { value ->
-                                    bodyValue = value
-                                    onContentChange(value.text)
-                                },
-                            )
+                            EditorBody(state = bodyState)
                         }
                     }
                 }
@@ -376,30 +385,46 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 }
 
 @Composable
-private fun EditorBody(
-    value: TextFieldValue,
-    onValueChange: (TextFieldValue) -> Unit,
-) {
+private fun EditorBody(state: TextFieldState) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    // Scrolling belongs to BasicTextField. It keeps the caret visible on its own - on tap, on
-    // typing, and when the keyboard shrinks the viewport - so there is nothing here to fix up.
-    //
-    // "Open at the top" is a property of the caret, not of a scroll position: the field scrolls
-    // to wherever the selection is, and bodyValue starts with the selection at the document
-    // start (see EditorContent). Planting it at the end - which an earlier version did - made the
-    // field scroll to the bottom the moment it gained focus.
+    val scroll = rememberScrollState()
+    var focused by remember { mutableStateOf(false) }
+    var viewportHeight by remember { mutableStateOf(0) }
+    var layout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
+
+    // The native field follows edits/selection changes. A keyboard-only resize can leave the
+    // logical selection unchanged; correct only that geometry event, using the SAME native
+    // scroll state. Never key this on focus or drag: reading a long note must remain scrollable
+    // independently of its old caret. A frame lets the tap selection and new measure settle.
+    LaunchedEffect(viewportHeight) {
+        if (!focused || viewportHeight <= 0) return@LaunchedEffect
+        withFrameNanos { }
+        val result = layout ?: return@LaunchedEffect
+        val caret = result.getCursorRect(state.selection.end.coerceIn(0, state.text.length))
+        val top = scroll.value.toFloat()
+        val correction = when {
+            caret.bottom > top + viewportHeight -> caret.bottom - (top + viewportHeight)
+            caret.top < top -> caret.top - top
+            else -> 0f
+        }
+        if (correction != 0f) scroll.scrollTo((scroll.value + correction).toInt())
+    }
+
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
+        state = state,
+        scrollState = scroll,
+        onTextLayout = { getResult -> layout = getResult() },
         modifier = Modifier
             .fillMaxSize()
+            .onFocusChanged { focused = it.isFocused }
+            .onSizeChanged { viewportHeight = it.height }
             .testTag(EditorTags.CONTENT),
         textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        decorationBox = { inner ->
-            if (value.text.isEmpty()) {
+        decorator = TextFieldDecorator { inner ->
+            if (state.text.isEmpty()) {
                 Text(
                     text = stringResource(R.string.editor_content_hint),
                     style = bodyStyle,

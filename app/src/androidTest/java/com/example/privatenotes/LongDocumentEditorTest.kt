@@ -44,7 +44,7 @@ class LongDocumentEditorTest {
 
     @Test fun scrollThenTapAndEditBeyondFirstViewport() {
         openDocument()
-        for (line in listOf(5, 31, 60, 100)) {
+        for (line in listOf(31, 60, 100, 5)) {
             val offset = scrollToAndTapLine(line)
             assertEquals("tap must address line $line, not a first-screen coordinate", offset, selection().start)
             assertCursorVisible("after tapping line $line and opening the real IME")
@@ -57,27 +57,57 @@ class LongDocumentEditorTest {
             field().performKeyInput { pressKey(androidx.compose.ui.input.key.Key.Backspace) }
             assertEquals(document, text())
         }
+        // Selection is initiated with a physical long press on the visible Latin word in
+        // line 100; semantic SetSelection would not test scrolled hit testing/handles.
+        scrollToAndTapLine(100)
+        val word = document.indexOf("第100行") + 9
+        val wordRect = layout().getBoundingBox(word + 1)
+        val local = wordRect.center + textOriginInRoot() - field().fetchSemanticsNode().boundsInRoot.topLeft
+        field().performTouchInput { longClick(local) }
+        compose.waitForIdle()
+        val selected = selection()
+        assertEquals("long press on row 100 must select that row's word", "abc",
+            text().substring(selected.min, selected.max))
+        assertEquals(word, selected.min)
+        field().performTextInput("已修改")
+        val edited = document.replaceRange(word, word + 3, "已修改")
+        assertEquals(edited, text())
+        hideKeyboard()
+        compose.onNodeWithContentDescription(compose.activity.getString(com.example.privatenotes.R.string.editor_back)).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(documentTitle).performClick()
+        compose.waitUntil(15_000) { runCatching { text() == edited }.getOrDefault(false) }
+        Log.i("LongDocument", "long press selected row 100; edited content survived save/reopen")
     }
 
-    @Test fun cursorRemainsVisibleWhenKeyboardReopensAtLine100() {
+    @Test fun firstImeAfterEachListEntryKeepsTheTappedLongDocumentLine() {
         openDocument()
-        scrollToAndTapLine(100)
-        assertCursorVisible("after the line-100 tap opens the IME")
-        hideKeyboard()
-        assertCursorVisible("after hiding the IME")
-        // Open via a coordinate tap at the selected character. The caret must remain in view
-        // during the viewport resize even when its logical offset and text are unchanged.
-        val caret = cursorInField()
-        field().performTouchInput { click(Offset(caret.left + 1f, caret.center.y)) }
-        waitForKeyboard(true)
-        assertCursorVisible("after reopening the IME without changing the selection")
+        for (entry in 1..3) {
+            // The reported defect resets after leaving and re-entering, not after merely
+            // hiding the keyboard in an already-focused editing session.
+            scrollToAndTapLine(100)
+            assertEquals("first tap on entry $entry", document.indexOf("第100行"), selection().start)
+            assertCursorVisible("entry $entry: first IME at row 100")
+            hideKeyboard()
+            val caret = cursorInField()
+            field().performTouchInput { click(Offset(caret.left + 1f, caret.center.y)) }
+            waitForKeyboard(true)
+            assertCursorVisible("entry $entry: second IME at unchanged row 100")
+            hideKeyboard()
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText(documentTitle).performClick()
+            compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
+            Log.i("LongDocument", "returned from list; next first tap entry=${entry + 1}")
+        }
     }
+
+    private val documentTitle = "长文滚动验收-${java.util.UUID.randomUUID()}"
 
     private fun openDocument() {
-        val title = "长文滚动验收-${java.util.UUID.randomUUID()}"
-        val id = runBlocking { container.noteRepository.createNote(title, document) }
+        val id = runBlocking { container.noteRepository.createNote(documentTitle, document) }
         compose.waitForIdle()
-        compose.onNodeWithText(title).performClick()
+        compose.onNodeWithText(documentTitle).performClick()
         compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
         Log.i("LongDocument", "opened id=$id, 100 distinguishable lines")
     }
@@ -89,7 +119,7 @@ class LongDocumentEditorTest {
     }
 
     /** Actual rendered glyph origin, independent of the text field's hit-testing code. */
-    private fun textOriginInRoot(): Offset {
+    private fun textCoordinates(): androidx.compose.ui.layout.LayoutCoordinates {
         val result = layout()
         val node = field().fetchSemanticsNode()
         return compose.runOnIdle {
@@ -99,8 +129,34 @@ class LongDocumentEditorTest {
                 it.coordinates.size.width == result.size.width && it.coordinates.size.height == result.size.height
             }
             check(candidates.size == 1) { "Expected one rendered text layout, got ${candidates.map { it.coordinates.size }}" }
-            candidates.single().coordinates.localToRoot(Offset.Zero)
+            candidates.single().coordinates
         }
+    }
+
+    private fun textOriginInRoot(): Offset {
+        val coordinates = textCoordinates()
+        return compose.runOnIdle { coordinates.localToRoot(Offset.Zero) }
+    }
+
+    private fun watchFirstImeFrames(line: Int, target: Rect, viewportTop: Float): List<Float> {
+        val coordinates = textCoordinates()
+        val samples = java.util.concurrent.CopyOnWriteArrayList<Float>()
+        val until = android.os.SystemClock.uptimeMillis() + 1_600
+        compose.activityRule.scenario.onActivity {
+            val choreographer = android.view.Choreographer.getInstance()
+            val callback = object : android.view.Choreographer.FrameCallback {
+                override fun doFrame(frameTimeNanos: Long) {
+                    if (coordinates.isAttached) {
+                        val y = coordinates.localToRoot(Offset.Zero).y
+                        samples.add(y)
+                        Log.i("LongDocument", "FRAME line=$line originY=$y targetY=${y + target.center.y} viewportTop=$viewportTop")
+                    }
+                    if (android.os.SystemClock.uptimeMillis() < until) choreographer.postFrameCallback(this)
+                }
+            }
+            choreographer.postFrameCallback(callback)
+        }
+        return samples
     }
 
     private fun cursorInField(): Rect {
@@ -125,10 +181,17 @@ class LongDocumentEditorTest {
         val target = result.getCursorRect(start)
         repeat(60) {
             val bounds = field().fetchSemanticsNode().boundsInRoot
-            val localY = textOriginInRoot().y + target.center.y - bounds.top
+            val origin = textOriginInRoot()
+            val localY = origin.y + target.center.y - bounds.top
             if (localY in 8f..(bounds.height - 8f)) {
+                Log.i("LongDocument", "BEFORE IME line=$line origin=$origin viewport=$bounds tapY=$localY")
+                val frames = watchFirstImeFrames(line, target, bounds.top)
                 field().performTouchInput { click(Offset(target.left + 1f, localY)) }
                 waitForKeyboard(true)
+                Thread.sleep(1_000)
+                assertTrue("IME opening must not flash the document top for offscreen line $line: $frames",
+                    line <= 5 || frames.none { it >= bounds.top - 2f })
+                Log.i("LongDocument", "AFTER IME line=$line origin=${textOriginInRoot()} viewport=${field().fetchSemanticsNode().boundsInRoot}")
                 Log.i("LongDocument", "tap line=$line expected=$start actual=${selection()} localY=$localY")
                 return start
             }
