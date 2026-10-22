@@ -44,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
@@ -66,6 +67,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import android.os.SystemClock
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -393,6 +396,13 @@ private fun EditorBody(
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var viewportHeight by remember { mutableStateOf(0) }
     var focused by remember { mutableStateOf(false) }
+    // When the viewport last changed size. While the keyboard animates the height moves every
+    // frame; chasing each intermediate value restarts the scroll below mid-flight, which is
+    // the visible flash when tapping text. We wait for it to settle instead.
+    var lastViewportChange by remember { mutableLongStateOf(0L) }
+    // Scroll target currently being animated toward. Restarting animateScrollTo for the same
+    // target cancels it mid-flight and re-starts it - also a flash. Let it finish instead.
+    var activeTarget by remember { mutableStateOf<Int?>(null) }
 
     // Deliberately *not* keyed on WindowInsets.ime: the Activity root consumes that inset with
     // imePadding(), so by the time this composable reads it, it is zero and a guard on it makes
@@ -401,7 +411,16 @@ private fun EditorBody(
     LaunchedEffect(focused, value.selection, textLayout, viewportHeight) {
         // Unfocused means the note is merely being read: opening it must show the top, not jump
         // to wherever the caret happens to rest.
-        if (!focused || viewportHeight <= 0) return@LaunchedEffect
+        if (!focused || viewportHeight <= 0) {
+            activeTarget = null
+            return@LaunchedEffect
+        }
+        // If the viewport moved recently the keyboard is still animating. Each new height cancels
+        // this run and starts a fresh wait, so only the settled height ever scrolls: one smooth
+        // motion instead of an animation fighting every frame.
+        while (SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS) {
+            delay(50)
+        }
         val layout = textLayout ?: return@LaunchedEffect
         val cursor = value.selection.end.coerceIn(0, value.text.length)
         val cursorRect = layout.getCursorRect(cursor)
@@ -412,9 +431,18 @@ private fun EditorBody(
         val target = when {
             top < scrollState.value -> top
             bottom > scrollState.value + viewportHeight -> bottom - viewportHeight
-            else -> return@LaunchedEffect
+            else -> {
+                activeTarget = null
+                return@LaunchedEffect
+            }
+        }.coerceIn(0, scrollState.maxValue)
+        if (activeTarget == target) return@LaunchedEffect
+        activeTarget = target
+        try {
+            scrollState.animateScrollTo(target)
+        } finally {
+            activeTarget = null
         }
-        scrollState.animateScrollTo(target.coerceIn(0, scrollState.maxValue))
     }
 
     BasicTextField(
@@ -422,7 +450,10 @@ private fun EditorBody(
         onValueChange = onValueChange,
         modifier = Modifier
             .fillMaxSize()
-            .onSizeChanged { viewportHeight = it.height }
+            .onSizeChanged {
+                if (it.height != viewportHeight) lastViewportChange = SystemClock.uptimeMillis()
+                viewportHeight = it.height
+            }
             .verticalScroll(scrollState)
             .onFocusChanged { focused = it.isFocused }
             .testTag(EditorTags.CONTENT),
@@ -539,6 +570,8 @@ object EditorTags {
 
 /** design.md §7: two motion durations, nothing else. */
 internal const val MOTION_MS = 150
+// How long the viewport must sit still before a scroll reacts to it.
+private const val VIEWPORT_SETTLE_MS = 200L
 
 @Composable
 private fun SaveStatus.label(): String = when (this) {
