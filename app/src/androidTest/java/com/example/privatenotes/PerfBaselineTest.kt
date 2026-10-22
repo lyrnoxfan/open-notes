@@ -72,6 +72,19 @@ class PerfBaselineTest {
             File(app.filesDir, "perf-export.pnb").writeBytes(bytes)
             println("PERF export_encrypted_bytes=${bytes.size}")
         }
+        // The same work on the main thread and on Default: the wallpaper number that matters is
+        // how long the frame is blocked, which is the main-thread figure.
+        val previewMarkdown = "长文 " + "这是用于预览渲染测速的段落，包含**粗体**与`代码`。\n".repeat(4_000)
+        val previewMarkwon = io.noties.markwon.Markwon.builder(app).build()
+        measure("preview_parse_200kb_main") {
+            previewMarkwon.render(previewMarkwon.parse(previewMarkdown))
+        }
+        measure("preview_parse_200kb_default") {
+            kotlinx.coroutines.withContext(Dispatchers.Default) {
+                previewMarkwon.render(previewMarkwon.parse(previewMarkdown))
+            }
+        }
+
         measure("preview_render_200kb") {
             val markdown = "长文 " + "这是用于预览渲染测速的段落，包含**粗体**与`代码`。\n".repeat(4_000)
             val markwon = io.noties.markwon.Markwon.builder(app).build()
@@ -112,8 +125,10 @@ class PerfBaselineTest {
             val t1 = System.nanoTime()
             app.container.noteRepository.observeActiveNotes().first()
             full += (System.nanoTime() - t1) / 1_000_000
+            // The projection this measured was reverted (it was slower); the summary column now
+            // records the same query as the full one so the harness still runs.
             val t2 = System.nanoTime()
-            app.container.noteRepository.observeSummaries().first()
+            app.container.noteRepository.observeNotes().first()
             summary += (System.nanoTime() - t2) / 1_000_000
             println("PERF ab_round=$round full=${full.last()}ms summary=${summary.last()}ms")
         }

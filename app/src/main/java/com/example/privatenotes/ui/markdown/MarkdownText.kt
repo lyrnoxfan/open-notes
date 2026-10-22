@@ -5,6 +5,10 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -12,6 +16,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.core.content.res.ResourcesCompat
 import com.example.privatenotes.R
 import io.noties.markwon.Markwon
@@ -98,6 +104,22 @@ fun MarkdownText(
 
     val rendered = remember(markdown) { MarkdownLineBreaks.apply(markdown) }
 
+    // Parsing and spanning a large document is milliseconds to seconds of CPU; doing it on the
+    // main thread blocked the frame the user was waiting for. It now runs on Default, and the
+    // result is applied only if it is still the newest request - a fast edit-save-edit cycle must
+    // not paint an older render over a newer one.
+    // Per-preview generation counter: an older parse finishing late must not paint over a newer
+    // one, and two previews on screen must not cancel each other.
+    val generation = remember { java.util.concurrent.atomic.AtomicLong() }
+    var parsed by remember(markwon, rendered) { mutableStateOf<android.text.Spanned?>(null) }
+    LaunchedEffect(markwon, rendered) {
+        val mine = generation.incrementAndGet()
+        val spanned = withContext(Dispatchers.Default) {
+            markwon.render(markwon.parse(rendered))
+        }
+        if (generation.get() == mine) parsed = spanned
+    }
+
     AndroidView(
         modifier = modifier,
         factory = { viewContext ->
@@ -130,7 +152,9 @@ fun MarkdownText(
             val extra = (lineHeightPx - intrinsic).coerceAtLeast(0f)
             textView.setLineSpacing(extra, 1f)
             textView.setPadding(0, (extra / 2f).roundToInt(), 0, 0)
-            markwon.setMarkdown(textView, rendered)
+            // Null until the background parse finishes; the view keeps its previous text rather
+            // than flashing empty.
+            parsed?.let { textView.text = it }
         },
     )
 }
