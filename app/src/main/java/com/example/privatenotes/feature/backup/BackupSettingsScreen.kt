@@ -126,6 +126,7 @@ fun BackupSettingsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        appLock.endSystemUi()
         if (uri != null) {
             val persisted = runCatching {
                 context.contentResolver.takePersistableUriPermission(
@@ -143,6 +144,7 @@ fun BackupSettingsScreen(
     }
 
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        appLock.endSystemUi()
         if (uri != null) viewModel.inspectImport(uri)
     }
 
@@ -156,7 +158,13 @@ fun BackupSettingsScreen(
     }
 
     val actions = SettingsActions(
-        onChooseDirectory = { directoryPicker.launch(null) },
+        onChooseDirectory = {
+            // A picker holds the screen for as long as the folder hunt takes; without this
+            // bracket a slow one trips the 30-second grace window and locks the user out on
+            // return (§6.2: system flows do not count as leaving).
+            appLock.beginSystemUi()
+            directoryPicker.launch(null)
+        },
         onConfirmLocalBackup = viewModel::backupLocal,
         onConfirmRemoteBackup = viewModel::backupRemote,
         onBaseUrlChange = viewModel::onBaseUrlChange,
@@ -165,7 +173,10 @@ fun BackupSettingsScreen(
         onPasswordChange = viewModel::onPasswordChange,
         onSaveWebDav = viewModel::saveWebDav,
         onTestConnection = viewModel::testConnection,
-        onPickImportFile = { importPicker.launch(arrayOf("*/*")) },
+        onPickImportFile = {
+            appLock.beginSystemUi()
+            importPicker.launch(arrayOf("*/*"))
+        },
         onCancelImport = viewModel::cancelImport,
         onConfirmImport = { password -> viewModel.confirmImport(password) },
         onDismissImportReport = viewModel::dismissImportReport,

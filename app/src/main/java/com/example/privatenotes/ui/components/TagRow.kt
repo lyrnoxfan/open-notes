@@ -13,21 +13,25 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.example.privatenotes.R
 
 /** Read-only tag labels under a note entry (§4.3). */
 @Composable
 fun TagLabelRow(tags: List<String>, modifier: Modifier = Modifier) {
     if (tags.isEmpty()) return
     val shown = tags.take(MAX_LABELS)
+    // TalkBack reads one clean phrase - the whole list, not just the four shown - instead of
+    // spelling out each "#tag".
+    val description = stringResource(R.string.note_tags_label, tags.joinToString("、"))
     Row(
         modifier = modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
-                // TalkBack reads one clean phrase instead of spelling out each "#tag".
-                contentDescription = "标签：" + shown.joinToString("、")
+                contentDescription = description
             },
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

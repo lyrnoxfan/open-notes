@@ -135,7 +135,10 @@ class TagManagementViewModelTest {
         observe(viewModel)
 
         viewModel.delete(work)
-        awaitState(viewModel) { it.tags.isEmpty() }
+        // The initial state has an empty tag list too, so this predicate is only meaningful
+        // once a real emission has arrived: loading must be done, which cannot happen before
+        // the delete's result has been read from the database.
+        awaitState(viewModel) { !it.isLoading && it.tags.isEmpty() }
 
         assertTrue("the tag is gone", tags.observeAll().first().isEmpty())
         assertEquals("the notes are not", 2, notes.activeNoteCount())

@@ -3,6 +3,10 @@ package com.example.privatenotes
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
 import com.example.privatenotes.security.AppLockState
 import com.example.privatenotes.security.SecureWindow
@@ -30,7 +34,17 @@ class MainActivity : FragmentActivity() {
 
         setContent {
             PrivateNotesTheme {
-                AppRoot(container = container)
+                // With adjustResize the keyboard arrives as an animated inset instead of the
+                // system panning the whole window - panning is what exposed the bottom of the
+                // document whenever the IME opened. Consuming the inset here keeps the focused
+                // cursor on screen on every screen with a text field.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .imePadding(),
+                ) {
+                    AppRoot(container = container)
+                }
             }
         }
     }
