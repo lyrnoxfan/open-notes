@@ -243,19 +243,20 @@ internal fun NoteListContent(
             FloatingActionButton(
                 onClick = onCreateNote,
                 modifier = Modifier.testTag(NoteListTags.CREATE),
-                shape = MaterialTheme.shapes.medium,
-                containerColor = com.example.privatenotes.ui.theme.LocalActionColors.current.first,
-                contentColor = com.example.privatenotes.ui.theme.LocalActionColors.current.second,
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
                 elevation = androidx.compose.material3.FloatingActionButtonDefaults.elevation(
-                    defaultElevation = 0.dp,
-                    pressedElevation = 0.dp,
-                    focusedElevation = 0.dp,
-                    hoveredElevation = 0.dp,
+                    defaultElevation = 6.dp,
+                    pressedElevation = 8.dp,
+                    focusedElevation = 6.dp,
+                    hoveredElevation = 8.dp,
                 ),
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Add,
                     contentDescription = stringResource(R.string.note_list_new),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         },
@@ -582,6 +583,12 @@ private fun NoteRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .clip(MaterialTheme.shapes.medium)
             .background(if (picked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+            .border(
+                width = 1.dp,
+                color = if (picked) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                shape = MaterialTheme.shapes.medium,
+            )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics {
                 if (selecting) selected = picked
