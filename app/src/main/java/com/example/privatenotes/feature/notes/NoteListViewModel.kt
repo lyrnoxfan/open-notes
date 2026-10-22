@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -43,7 +45,7 @@ data class NoteListUiState(
  * may have been invalidated), and that failure belongs on screen as an error state rather than
  * as a crash during ViewModel construction.
  */
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class NoteListViewModel(
     private val repositoryProvider: () -> NoteRepository,
     private val tagRepositoryProvider: () -> TagRepository,
@@ -52,7 +54,13 @@ class NoteListViewModel(
     private val query = MutableStateFlow("")
     private val selectedTagId = MutableStateFlow<String?>(null)
 
+    /**
+     * Typing runs a `LIKE '%term%'` over title and body, which cannot use an index and touches
+     * every row. Waiting for the typing to settle turns one query per keystroke into one query per
+     * search; clearing the box is not typing, so it stays immediate.
+     */
     private val results = combine(query, selectedTagId) { term, tagId -> term to tagId }
+        .debounce { (term, _) -> if (term.isEmpty()) 0L else SEARCH_DEBOUNCE_MILLIS }
         .flatMapLatest { (term, tagId) -> repositoryProvider().observeNotes(term, tagId) }
 
     // Deferred to collection time so a database that cannot be opened surfaces as an error
@@ -107,6 +115,13 @@ class NoteListViewModel(
 
     companion object {
         private const val STOP_TIMEOUT_MS = 5_000L
+
+        /**
+         * Long enough that a word typed at speed produces one query, short enough that the list
+         * feels like it filters as you type. A pinyin IME commits a run of characters at once, so
+         * a composition does not produce a query per letter.
+         */
+        internal const val SEARCH_DEBOUNCE_MILLIS = 250L
 
         fun factory(
             repositoryProvider: () -> NoteRepository,
