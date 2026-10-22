@@ -20,6 +20,9 @@ object DesignTokens {
         val background: Color
         val surface: Color
         val surfaceMuted: Color
+        val action: Color
+        val onAction: Color
+        val attention: Color
         val accent: Color
         val onAccent: Color
         val accentContainer: Color
@@ -31,41 +34,41 @@ object DesignTokens {
         val error: Color
     }
 
-    /**
-     * 浅色：暖纸主背景，砖橙强调。
-     *
-     * `textSecondary` 比最初取值略深：原值在页面底色上只有 4.24:1，达不到正文之下的 4.5:1
-     * （见 scripts/contrast.py）。`divider` 是装饰细线，`dividerStrong` 用在需要被看见的
-     * 输入框边界上。
-     */
+    /** Warm white paper, ink-green text and sage actions. Terracotta is decorative, not small text. */
     object Light : DesignScheme {
-        override val background = Color(0xFFF1E7DA)
-        override val surface = Color(0xFFF8F1E7)
-        override val surfaceMuted = Color(0xFFEADCCC)
-        override val accent = Color(0xFFA13F04)
-        override val onAccent = Color(0xFFFDF6EE)
-        override val accentContainer = Color(0xFFF3D9C4)
-        override val onAccentContainer = Color(0xFF3E1A02)
-        override val textPrimary = Color(0xFF3A2A1E)
-        override val textSecondary = Color(0xFF6F5C4B)
-        override val divider = Color(0xFFD8C8B4)
-        override val dividerStrong = Color(0xFFC6B29A)
-        override val error = Color(0xFF8C2F1F)
+        override val action = Color(0xFF668575)
+        override val onAction = Color(0xFF07120C)
+        override val attention = Color(0xFFC97862)
+        override val background = Color(0xFFF7F6F2)
+        override val surface = Color(0xFFFFFFFF)
+        override val surfaceMuted = Color(0xFFDCE8EA)
+        override val accent = Color(0xFF365B49)
+        override val onAccent = Color(0xFFFFFFFF)
+        override val accentContainer = Color(0xFFDCE8EA)
+        override val onAccentContainer = Color(0xFF26332E)
+        override val textPrimary = Color(0xFF26332E)
+        override val textSecondary = Color(0xFF52645B)
+        override val divider = Color(0xFFC9D2CC)
+        override val dividerStrong = Color(0xFF7B8C82)
+        override val error = Color(0xFF994936)
     }
 
-    /** 深色：深暖棕，不用纯黑；强调色提亮为暖橙棕以保持对比。 */
+    /** 深色：深绿纸面和浅鼠尾草强调，保留同样的主次层级。 */
     object Dark : DesignScheme {
-        override val background = Color(0xFF1C1410)
-        override val surface = Color(0xFF251A13)
-        override val surfaceMuted = Color(0xFF30231A)
-        override val accent = Color(0xFFE2894A)
-        override val onAccent = Color(0xFF2B1607)
-        override val accentContainer = Color(0xFF4A2A12)
-        override val onAccentContainer = Color(0xFFF3D9C4)
-        override val textPrimary = Color(0xFFEDE0D2)
-        override val textSecondary = Color(0xFFB09A87)
-        override val divider = Color(0xFF3C2C21)
-        override val dividerStrong = Color(0xFF4A382B)
-        override val error = Color(0xFFE59A88)
+        override val action = Color(0xFF91B7A1)
+        override val onAction = Color(0xFF11251A)
+        override val attention = Color(0xFFE2A18A)
+        override val background = Color(0xFF151E19)
+        override val surface = Color(0xFF1D2922)
+        override val surfaceMuted = Color(0xFF2B3B33)
+        override val accent = Color(0xFFA9CBB8)
+        override val onAccent = Color(0xFF182C20)
+        override val accentContainer = Color(0xFF304840)
+        override val onAccentContainer = Color(0xFFE0ECE5)
+        override val textPrimary = Color(0xFFE7EEE7)
+        override val textSecondary = Color(0xFFBAC9BE)
+        override val divider = Color(0xFF41544A)
+        override val dividerStrong = Color(0xFF839C8D)
+        override val error = Color(0xFFF3B09A)
     }
 }

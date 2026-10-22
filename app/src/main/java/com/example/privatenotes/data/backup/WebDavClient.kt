@@ -13,6 +13,8 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
@@ -209,13 +211,21 @@ class WebDavClient(
         val response = execute(request)
         return response.use {
             if (!it.isSuccessful) throw statusFailure(it.code, "download $fileName")
-            it.body?.bytes() ?: throw storageFailure("WebDAV returned an empty file")
+            val body = it.body ?: throw storageFailure("WebDAV returned an empty file")
+            if (body.contentLength() > BackupLimits.MAX_FILE_BYTES) {
+                throw BackupException(BackupErrorKind.INVALID_FORMAT, "远程备份文件过大，拒绝导入")
+            }
+            try {
+                body.byteStream().use { input -> readBackupBytes(input) }
+            } catch (e: IOException) {
+                throw BackupException(BackupErrorKind.NETWORK, "Could not read the remote backup", e, retryable = true)
+            }
         }
     }
 
     private suspend fun propfind(url: HttpUrl, depth: Int = 0): Response {
         val body = """<?xml version="1.0" encoding="utf-8"?>
-            |<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/></d:prop></d:propfind>
+            |<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/></d:prop></d:propfind>
         """.trimMargin()
         val request = authorized(
             Request.Builder()
@@ -421,7 +431,12 @@ internal fun parsePropfindFileList(xml: String, nowMillis: Long = System.current
         val href = HREF_REGEX.find(block)?.groupValues?.getOrNull(1) ?: continue
         // java.net.URLDecoder, not android.net.Uri: this parser is also unit-tested on the JVM
         // without Robolectric, where android.net.Uri is unavailable.
-        val decoded = java.net.URLDecoder.decode(href.substringAfterLast('/'), Charsets.UTF_8.name())
+        val decoded = try {
+            // DAV hrefs are URI paths, not HTML forms: a literal '+' must stay a plus.
+            java.net.URLDecoder.decode(href.substringAfterLast('/').replace("+", "%2B"), Charsets.UTF_8.name())
+        } catch (_: IllegalArgumentException) {
+            continue
+        }
         if (!BackupFileNames.isBackupFile(decoded)) continue
         val size = CONTENT_LENGTH_REGEX.find(block)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
         val modified = LAST_MODIFIED_REGEX.find(block)?.groupValues?.getOrNull(1)?.let { parseHttpDate(it) }
@@ -445,3 +460,20 @@ private val HREF_REGEX =
 
 private val LAST_MODIFIED_REGEX =
     Regex("<(?:[A-Za-z][\\w.-]*:)?getlastmodified>([^<]+)</(?:[A-Za-z][\\w.-]*:)?getlastmodified>")
+
+/** Cap remote restores while streaming, including chunked bodies without Content-Length. */
+internal fun readBackupBytes(input: InputStream, maxBytes: Long = BackupLimits.MAX_FILE_BYTES): ByteArray {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0L
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        total += count
+        if (total > maxBytes) {
+            throw BackupException(BackupErrorKind.INVALID_FORMAT, "远程备份文件过大，拒绝导入")
+        }
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
+}

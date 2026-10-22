@@ -23,6 +23,7 @@ class DesignTokenContrastTest {
 
     private fun pairs(scheme: String, t: DesignTokens.DesignScheme): List<Pair> {
         return listOf(
+            Pair("$scheme action/label", t.onAction, t.action, TEXT),
             Pair("$scheme body/page", t.textPrimary, t.background, BODY),
             Pair("$scheme body/card", t.textPrimary, t.surface, BODY),
             Pair("$scheme body/muted", t.textPrimary, t.surfaceMuted, BODY),

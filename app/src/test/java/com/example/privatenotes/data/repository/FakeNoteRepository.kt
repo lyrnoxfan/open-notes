@@ -24,6 +24,8 @@ class FakeNoteRepository : NoteRepository {
     var failWrites: Boolean = false
     var failDeletes: Boolean = false
     var slowUpdateMillis: Long = 0
+    var slowCreateMillis: Long = 0
+    var slowLoadMillis: Long = 0
     var createCount: Int = 0
 
     private var nextId = 0
@@ -37,9 +39,13 @@ class FakeNoteRepository : NoteRepository {
 
     override fun search(term: String): Flow<List<NoteEntity>> = notes
 
-    override suspend fun findById(id: String): NoteEntity? = notes.value.find { it.id == id }
+    override suspend fun findById(id: String): NoteEntity? {
+        if (slowLoadMillis > 0) delay(slowLoadMillis)
+        return notes.value.find { it.id == id }
+    }
 
     override suspend fun createNote(title: String, content: String): String {
+        if (slowCreateMillis > 0) delay(slowCreateMillis)
         if (failWrites) throw IllegalStateException("create failed")
         val id = "note-${nextId++}"
         createCount++

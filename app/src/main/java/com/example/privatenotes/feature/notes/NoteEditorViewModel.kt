@@ -10,6 +10,8 @@ import com.example.privatenotes.data.local.TagEntity
 import com.example.privatenotes.data.repository.NoteRepository
 import com.example.privatenotes.data.repository.TagRepository
 import com.example.privatenotes.data.repository.TimeSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
@@ -113,6 +115,7 @@ class NoteEditorViewModel(
     private var persistedRevision = 0L
     private var noteId: String? = existingNoteId
     private var deleted = false
+    private var deleting = false
 
     private val pending = MutableStateFlow<Snapshot?>(null)
 
@@ -130,7 +133,8 @@ class NoteEditorViewModel(
 
         viewModelScope.launch {
             pending.filterNotNull().debounce(debounceMillis).collect { snapshot ->
-                persist(snapshot)
+                // Navigation must not cancel a write after the database has accepted it.
+                externalScope.launch(Dispatchers.Main.immediate) { persist(snapshot) }
             }
         }
 
@@ -195,7 +199,7 @@ class NoteEditorViewModel(
     fun onContentChange(value: String) = edit(content = value)
 
     private fun edit(title: String? = null, content: String? = null) {
-        if (deleted) return
+        if (deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
         val current = _uiState.value
         val nextTitle = title ?: current.title
         val nextContent = content ?: current.content
@@ -213,43 +217,38 @@ class NoteEditorViewModel(
      *
      * Called when leaving the editor and when the app goes to the background (§7.1).
      */
-    suspend fun flush() {
+    suspend fun flush() = withContext(Dispatchers.Main.immediate) {
+        // Capture revision and text together on the editor thread, including lifecycle saves.
         persist(Snapshot(revision, _uiState.value.title, _uiState.value.content))
     }
 
     /** Same as [flush], but survives the ViewModel being cleared mid-write. */
     fun flushInBackground() {
-        externalScope.launch { runCatching { flush() } }
+        externalScope.launch(Dispatchers.Main.immediate) { flush() }
     }
 
     fun deleteNote() {
-        if (deleted) return
-        val id = noteId
-        // Nothing was ever persisted, so there is nothing to delete: leaving the screen is the
-        // whole operation.
-        if (id == null) {
-            deleted = true
-            pending.value = null
-            _uiState.update { it.copy(isDeleted = true) }
-            return
-        }
-        viewModelScope.launch {
-            val outcome = runCatching {
-                if (noteSettings.trashEnabled.value) {
-                    repository.moveToTrash(id)
-                } else {
-                    repository.deletePermanentlyAll(listOf(id))
-                }
-            }
-            outcome.onSuccess {
-                deleted = true
-                pending.value = null
-                _uiState.update { it.copy(isDeleted = true) }
-            }.onFailure { failure ->
-                // Leaving the editor over a failed delete would look exactly like a successful
-                // one, and the note would still be in the list, un-deleted. Say so instead.
-                _uiState.update {
-                    it.copy(saveStatus = SaveStatus.Failed(failure.message ?: DELETE_ERROR))
+        if (deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
+        deleting = true
+        pending.value = null
+        externalScope.launch(Dispatchers.Main.immediate) {
+            // An in-flight create must publish its id before we decide there is no row to delete.
+            mutex.withLock {
+                try {
+                    val id = noteId
+                    if (id != null) {
+                        if (noteSettings.trashEnabled.value) repository.moveToTrash(id)
+                        else repository.deletePermanentlyAll(listOf(id))
+                    }
+                    deleted = true
+                    _uiState.update { it.copy(isDeleted = true) }
+                    runCatching { onPersisted() }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: Throwable) {
+                    _uiState.update { it.copy(saveStatus = SaveStatus.Failed(failure.message ?: DELETE_ERROR)) }
+                } finally {
+                    deleting = false
                 }
             }
         }
@@ -257,7 +256,7 @@ class NoteEditorViewModel(
 
     private suspend fun persist(snapshot: Snapshot) {
         mutex.withLock {
-            if (deleted) return
+            if (deleted || deleting) return
             if (snapshot.revision <= persistedRevision) return
             // Opening the editor and leaving without typing must not create an empty note.
             if (noteId == null && snapshot.title.isBlank() && snapshot.content.isBlank()) return
@@ -274,7 +273,11 @@ class NoteEditorViewModel(
                     repository.updateNote(currentId, snapshot.title, snapshot.content)
                 }
                 persistedRevision = snapshot.revision
-                _uiState.update { it.copy(saveStatus = SaveStatus.Saved(timeSource.nowMillis())) }
+                _uiState.update {
+                    it.copy(saveStatus = if (snapshot.revision == revision) {
+                        SaveStatus.Saved(timeSource.nowMillis())
+                    } else SaveStatus.Pending)
+                }
                 // After the status says "saved": an upload must never make a successful local
                 // write look like it is still in progress.
                 runCatching { onPersisted() }

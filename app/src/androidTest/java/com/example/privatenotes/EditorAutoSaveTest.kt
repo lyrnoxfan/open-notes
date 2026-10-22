@@ -11,6 +11,7 @@ import com.example.privatenotes.feature.notes.EditorTags
 import com.example.privatenotes.feature.notes.NoteListTags
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.room.withTransaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -37,7 +38,13 @@ class EditorAutoSaveTest {
 
     @Before
     fun clearNotes() = runBlocking {
-        container.database.clearAllTables()
+        // Use Room's suspend transaction path; SQLCipher clearAllTables can race invalidation.
+        container.database.withTransaction {
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM note_tag_refs")
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM notes")
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM tags")
+            container.database.openHelper.writableDatabase.execSQL("DELETE FROM deletion_markers")
+        }
     }
 
     @Test

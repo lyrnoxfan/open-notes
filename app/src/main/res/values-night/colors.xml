@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Mirrors DesignTokens.Dark: deep warm brown, never pure black. -->
-    <color name="window_background">#1C1410</color>
+    <!-- Mirrors DesignTokens.Dark: deep forest green, never pure black. -->
+    <color name="window_background">#151E19</color>
 </resources>

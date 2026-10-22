@@ -202,6 +202,8 @@ private fun TagRow(tag: TagUsage, onRename: () -> Unit, onDelete: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 5.dp)
+            .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium)
             .clickable(onClick = onRename)
             .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -3,6 +3,7 @@ package com.example.privatenotes.feature.backup
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,7 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.example.privatenotes.ui.components.NoteButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -28,7 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.example.privatenotes.ui.components.NoteOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -430,7 +431,11 @@ private fun SettingsSection(
     title: String,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 20.dp)
+            .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.large)
+            .padding(18.dp),
+    ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
@@ -532,7 +537,10 @@ private fun SectionHint(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small)
+            .padding(12.dp),
     )
 }
 
@@ -756,9 +764,6 @@ private fun ImportSection(
             onClick = onPickFile,
             enabled = !state.busy,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.onBackground,
-            ),
         ) {
             Text(stringResource(R.string.backup_import_pick))
         }

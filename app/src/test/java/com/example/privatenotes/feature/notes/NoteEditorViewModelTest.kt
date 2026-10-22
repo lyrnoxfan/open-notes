@@ -62,6 +62,53 @@ class NoteEditorViewModelTest {
     }
 
     @Test
+    fun `deleting during the first slow save does not leave an orphan note`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository().apply { slowCreateMillis = 5_000 }
+        val viewModel = viewModel(repository)
+        viewModel.onContentChange("delete me")
+        advanceTimeBy(1_100)
+        runCurrent()
+        viewModel.deleteNote()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertTrue(repository.notes.value.none { it.deletedAt == null })
+    }
+
+    @Test
+    fun `an older completed save must not mark newer input as saved`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository().apply { slowCreateMillis = 5_000 }
+        val viewModel = viewModel(repository)
+        viewModel.onContentChange("old")
+        advanceTimeBy(1_100)
+        runCurrent()
+        advanceTimeBy(4_500)
+        viewModel.onContentChange("new")
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals("old", repository.notes.value.single().content)
+        assertTrue(viewModel.uiState.value.saveStatus is SaveStatus.Pending)
+        advanceTimeBy(1_100)
+        runCurrent()
+        assertEquals("new", repository.notes.value.single().content)
+        assertTrue(viewModel.uiState.value.saveStatus is SaveStatus.Saved)
+    }
+
+    @Test
+    fun `input before an existing note finishes loading cannot overwrite it`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val id = repository.createNote("original", "keep me")
+        repository.slowLoadMillis = 5_000
+        val viewModel = viewModel(repository, noteId = id)
+        runCurrent()
+        viewModel.onContentChange("premature input")
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals("keep me", repository.notes.value.single().content)
+        assertEquals("keep me", viewModel.uiState.value.content)
+    }
+
+    @Test
     fun `typing is saved once after the debounce window`() = runTest(mainDispatcher) {
         val repository = FakeNoteRepository()
         val viewModel = viewModel(repository)

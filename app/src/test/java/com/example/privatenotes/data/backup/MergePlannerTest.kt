@@ -12,6 +12,22 @@ import org.junit.Test
 class MergePlannerTest {
 
     @Test
+    fun `a backup edit newer than a tombstone keeps its content and tags`() {
+        val plan = plan(
+            localNotes = listOf(localNote("n", updatedAt = 100L)),
+            backup = backupDocument(
+                notes = listOf(backupNote("n", title = "new edit", createdAt = 1L, updatedAt = 200L)),
+                markers = listOf(BackupDeletionMarker("n", deletedAt = 150L, lastKnownUpdatedAt = 100L)),
+                tags = listOf(backupTag("t", name = "saved", createdAt = 1L, updatedAt = 1L)),
+                noteTags = listOf(BackupNoteTag("n", "t")),
+            ),
+        )
+        assertEquals(0, plan.report.blockedNotes)
+        assertEquals("new edit", plan.notesToUpsert.single().title)
+        assertEquals("t", plan.refsToReplace.getValue("n").single().tagId)
+    }
+
+    @Test
     fun `a newer backup note updates the local copy`() {
         val plan = plan(
             localNotes = listOf(localNote("n", title = "local", updatedAt = 100L)),
