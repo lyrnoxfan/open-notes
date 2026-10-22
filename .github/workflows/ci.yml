@@ -171,7 +171,9 @@ jobs:
       # remains failed/red; it must not be mistaken for a passing fixed-device test.
       - name: Restore old editor for the baseline control only
         if: matrix.editor == 'baseline'
-        run: git show c5d019d:app/src/main/java/com/example/privatenotes/feature/notes/NoteEditorScreen.kt > app/src/main/java/com/example/privatenotes/feature/notes/NoteEditorScreen.kt
+        run: |
+          git fetch origin c5d019dccb6f05029c3b16bbf3f6d7dfe0b30896 --depth=1
+          git show c5d019dccb6f05029c3b16bbf3f6d7dfe0b30896:app/src/main/java/com/example/privatenotes/feature/notes/NoteEditorScreen.kt > app/src/main/java/com/example/privatenotes/feature/notes/NoteEditorScreen.kt
       - name: Build actual app and instrumentation APKs
         run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
       - name: Enable KVM

@@ -97,22 +97,6 @@ fun NoteEditorScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val lifecycleOwner = LocalLifecycleOwner.current
-
-    // §7.1: leaving the editor must not drop the last keystrokes, and neither must going to
-    // the background. The write runs outside the ViewModel scope so it can finish after the
-    // screen is gone.
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) viewModel.flushInBackground()
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            viewModel.flushInBackground()
-        }
-    }
-
     LaunchedEffect(state.isDeleted) {
         if (state.isDeleted) onBack()
     }
@@ -126,6 +110,7 @@ fun NoteEditorScreen(
         onAddTag = viewModel::addTag,
         onRemoveTag = viewModel::removeTag,
         onBack = onBack,
+        onFlush = viewModel::flushInBackground,
         modifier = modifier,
     )
 }
@@ -145,6 +130,7 @@ internal fun EditorContent(
     onAddTag: (String) -> Unit,
     onRemoveTag: (EditorTag) -> Unit,
     onBack: () -> Unit,
+    onFlush: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -184,9 +170,23 @@ internal fun EditorContent(
         onContentChange(bodyState.text.toString())
         onBack()
     }
-    // A back press/disposal must never outrun the snapshot observer's final keystroke.
-    DisposableEffect(bodyState) {
-        onDispose { currentOnContentChange(bodyState.text.toString()) }
+    // Lifecycle saves must sample the actual buffer BEFORE flushing the ViewModel. Otherwise
+    // an immediate background/exit can outrun snapshotFlow's final keystroke delivery.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnFlush by rememberUpdatedState(onFlush)
+    DisposableEffect(lifecycleOwner, bodyState) {
+        fun flushBuffer() {
+            if (bodyLoaded) currentOnContentChange(bodyState.text.toString())
+            currentOnFlush()
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) flushBuffer()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            flushBuffer()
+        }
     }
 
     if (tagDialogOpen) {

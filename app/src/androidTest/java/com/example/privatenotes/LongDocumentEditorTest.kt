@@ -89,8 +89,12 @@ class LongDocumentEditorTest {
             assertEquals("first tap on entry $entry", document.indexOf("第100行"), selection().start)
             assertCursorVisible("entry $entry: first IME at row 100")
             hideKeyboard()
-            val caret = cursorInField()
-            field().performTouchInput { click(Offset(caret.left + 1f, caret.center.y)) }
+            // Tap actual glyphs, not the existing caret/selection handle (which consumes
+            // a handle tap and intentionally does not reopen the keyboard).
+            val glyph = layout().getBoundingBox(document.indexOf("第100行") + 2)
+            val point = glyph.center + textOriginInRoot() - field().fetchSemanticsNode().boundsInRoot.topLeft
+            Log.i("LongDocument", "entry $entry: second tap=$point")
+            field().performTouchInput { click(point) }
             waitForKeyboard(true)
             assertCursorVisible("entry $entry: second IME at unchanged row 100")
             hideKeyboard()
