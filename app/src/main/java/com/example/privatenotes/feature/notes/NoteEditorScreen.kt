@@ -48,6 +48,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,7 +60,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
@@ -167,10 +167,14 @@ internal fun EditorContent(
     // carries no composition, and the editor rebuilt on every keystroke (docs/test-report.md P1).
     // rememberSaveable, so the caret and the composing buffer also survive a configuration change;
     // EditorContent stays composed while the preview is toggled, so they survive that too.
-    // The caret starts at the end, which is what "keep writing where I left off" means; the view
-    // itself opens at the top (see EditorBody: it only follows the caret once the field is focused).
+    //
+    // No caret is planted on open. Nobody has tapped yet, so there is no caret to restore, and a
+    // made-up one is not harmless: TextFieldValue(text, TextRange(content.length)) put it at the
+    // end of the note, and anything that read the selection before the first tap landed (the
+    // scroll effect waiting out the IME animation) computed "scroll to the bottom" from it. The
+    // default selection is the document start, which is also where the view opens.
     var bodyValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(state.content, TextRange(state.content.length)))
+        mutableStateOf(TextFieldValue(state.content))
     }
 
     // One body scroll state for the whole screen: EditorBody leaves composition when the preview
@@ -182,7 +186,7 @@ internal fun EditorContent(
     // would throw away what the IME is in the middle of.
     LaunchedEffect(state.content) {
         if (bodyValue.composition == null && bodyValue.text != state.content) {
-            bodyValue = TextFieldValue(state.content, TextRange(state.content.length))
+            bodyValue = TextFieldValue(state.content)
         }
     }
 
@@ -403,6 +407,10 @@ private fun EditorBody(
     // Scroll target currently being animated toward. Restarting animateScrollTo for the same
     // target cancels it mid-flight and re-starts it - also a flash. Let it finish instead.
     var activeTarget by remember { mutableStateOf<Int?>(null) }
+    // The effect below deliberately does not restart when the selection changes, so it must not
+    // read the value captured when it started either: that snapshot is stale by the time the wait
+    // ends, and a caret from before the tap is exactly how it used to compute "scroll to the end".
+    val latestValue by rememberUpdatedState(value)
 
     // Deliberately *not* keyed on WindowInsets.ime: the Activity root consumes that inset with
     // imePadding(), so by the time this composable reads it, it is zero and a guard on it makes
@@ -416,10 +424,9 @@ private fun EditorBody(
     // it runs, so it still lands on the right caret.
     //
     // Deliberately *not* keyed on focused: on tap, focus flips before the tap's selection lands
-    // in bodyValue, so the effect would read the stale caret (which rests at the end of the note
-    // while the view opens at the top) and scroll to the bottom, then the native follow-up yanks
-    // it back - the exact phantom jump. The keyboard resize always follows a tap-focus, so keying
-    // on the viewport alone still covers it, with the selection already settled.
+    // in bodyValue, so an effect that read the selection at that moment would compute a target
+    // from the pre-tap caret. The keyboard resize always follows a tap-focus, so keying on the
+    // viewport alone still covers it - and the snapshot is re-read after the wait for the rest.
     LaunchedEffect(textLayout, viewportHeight) {
         // Unfocused means the note is merely being read: opening it must show the top, not jump
         // to wherever the caret happens to rest.
@@ -433,11 +440,15 @@ private fun EditorBody(
         while (SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS) {
             delay(50)
         }
+        // Read the value *after* the wait: the tap's selection lands in bodyValue while this
+        // effect is suspended, and the effect is not keyed on it (that would fight the field's
+        // own cursor-following), so the captured `value` here is the pre-tap one.
+        val current = latestValue
         val layout = textLayout ?: return@LaunchedEffect
         // The layout can lag behind the text by a frame; a cursor rect from a stale layout
         // points at the wrong place (the phantom jump-to-bottom). Skip until they agree.
-        if (layout.layoutInput.text.text != value.text) return@LaunchedEffect
-        val cursor = value.selection.end.coerceIn(0, value.text.length)
+        if (layout.layoutInput.text.text != current.text) return@LaunchedEffect
+        val cursor = current.selection.end.coerceIn(0, current.text.length)
         val cursorRect = layout.getCursorRect(cursor)
         val top = cursorRect.top.roundToInt()
         val bottom = cursorRect.bottom.roundToInt()
