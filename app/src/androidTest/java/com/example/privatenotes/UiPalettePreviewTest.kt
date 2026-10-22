@@ -1,6 +1,14 @@
 package com.example.privatenotes
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
@@ -32,7 +40,19 @@ class UiPalettePreviewTest {
     @Test fun editorLight() = renderEditor(false)
     @Test fun editorDark() = renderEditor(true)
 
-    private fun renderList(dark: Boolean) {
+    @Test fun listLargeNarrow() = renderList(false, largeNarrow = true)
+    @Test fun editorLargeNarrow() = renderEditor(false, largeNarrow = true)
+
+    @Composable private fun PreviewHost(dark: Boolean, largeNarrow: Boolean, content: @Composable () -> Unit) {
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, if (largeNarrow) 2f else density.fontScale)) {
+            PrivateNotesTheme(darkTheme = dark) {
+                Box(if (largeNarrow) Modifier.width(320.dp) else Modifier) { content() }
+            }
+        }
+    }
+
+    private fun renderList(dark: Boolean, largeNarrow: Boolean = false) {
         val notes = listOf(
             "慢慢记录，认真生活" to "留一点时间给自己，也给那些值得记住的小事。",
             "周末的散步计划" to "沿着河边走走，带一本书，找一家安静的小店。",
@@ -41,7 +61,7 @@ class UiPalettePreviewTest {
             NoteWithTags(NoteEntity("preview-$index", title, content, 1_792_684_800_000L, 1_792_684_800_000L), emptyList())
         }
         compose.setContent {
-            PrivateNotesTheme(darkTheme = dark) {
+            PreviewHost(dark, largeNarrow) {
                 NoteListContent(
                     state = NoteListUiState(notes = notes, isLoading = false),
                     snackbarHostState = SnackbarHostState(),
@@ -52,12 +72,12 @@ class UiPalettePreviewTest {
                 )
             }
         }
-        save("list", dark)
+        save("list", dark, largeNarrow)
     }
 
-    private fun renderEditor(dark: Boolean) {
+    private fun renderEditor(dark: Boolean, largeNarrow: Boolean = false) {
         compose.setContent {
-            PrivateNotesTheme(darkTheme = dark) {
+            PreviewHost(dark, largeNarrow) {
                 EditorContent(
                     state = NoteEditorUiState(
                         title = "慢慢记录，认真生活", isLoaded = true,
@@ -69,14 +89,15 @@ class UiPalettePreviewTest {
                 )
             }
         }
-        save("editor", dark)
+        save("editor", dark, largeNarrow)
     }
 
-    private fun save(screen: String, dark: Boolean) {
+    private fun save(screen: String, dark: Boolean, largeNarrow: Boolean) {
         compose.waitForIdle()
         val root = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "ui-previews")
         check(root.isDirectory || root.mkdirs())
-        val file = File(root, "$screen-${if (dark) "dark" else "light"}.png")
+        val variant = if (largeNarrow) "large-narrow" else if (dark) "dark" else "light"
+        val file = File(root, "$screen-$variant.png")
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         file.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
         assertTrue(file.length() > 0)

@@ -111,8 +111,8 @@ sleep 2
 info "instrumentation survived the kill: $(grep -c "Process crashed" "$OUT/slow-import.txt" || true) crash marker(s)"
 sleep 2
 if run_test "$PKG.E2eAtomicityTest" "$OUT/atomicity.txt"; then
-  "${ADB[@]}" exec-out run-as "$PKG" cat files/atomicity.txt 2>/dev/null | head -1 >"$OUT/atomicity.txt" || true
-  ok "after the kill the database was untouched or complete: $(cat "$OUT/atomicity.txt")"
+  "${ADB[@]}" exec-out run-as "$PKG" cat files/atomicity.txt 2>/dev/null | head -1 >"$OUT/atomicity-state.txt" || true
+  ok "after the kill the database was untouched or complete: $(cat "$OUT/atomicity-state.txt")"
 else
   bad "a kill mid-import left a half-merged database"; grep -A8 -i "failure\|AssertionError" "$OUT/atomicity.txt" | head -20
 fi

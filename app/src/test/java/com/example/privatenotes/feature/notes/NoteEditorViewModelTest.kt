@@ -62,6 +62,94 @@ class NoteEditorViewModelTest {
     }
 
     @Test
+    fun `a stale editor never claims saving succeeded after external deletion`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val id = repository.createNote("title", "saved")
+        val viewModel = viewModel(repository, noteId = id)
+        runCurrent()
+        repository.moveToTrash(id)
+        viewModel.onContentChange("unsaved draft still available")
+        viewModel.flush()
+        assertTrue(viewModel.uiState.value.saveStatus is SaveStatus.Failed)
+        assertEquals("unsaved draft still available", viewModel.uiState.value.content)
+        assertEquals("saved", repository.notes.value.single().content)
+        assertTrue(repository.notes.value.single().deletedAt != null)
+    }
+
+    @Test
+    fun `delete failure can be retried without typing again`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val id = repository.createNote("title", "saved")
+        val viewModel = viewModel(repository, noteId = id)
+        runCurrent()
+        repository.failDeletes = true
+        viewModel.deleteNote()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.saveStatus is SaveStatus.Failed)
+        assertTrue(!viewModel.uiState.value.isDeleted)
+        repository.failDeletes = false
+        viewModel.deleteNote()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertTrue(repository.notes.value.single().deletedAt != null)
+    }
+
+    @Test
+    fun `deleting an untouched blank draft creates no empty trash row`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val viewModel = viewModel(repository)
+        viewModel.deleteNote()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertTrue(repository.notes.value.isEmpty())
+    }
+
+    @Test
+    fun `moving to trash before debounce preserves the latest text for restore`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val id = repository.createNote("title", "old")
+        val viewModel = viewModel(repository, noteId = id)
+        runCurrent()
+        viewModel.onContentChange("latest unsaved input")
+        viewModel.deleteNote()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isDeleted)
+        repository.restoreFromTrash(id)
+        assertEquals("latest unsaved input", repository.notes.value.single().content)
+    }
+
+    @Test
+    fun `trashing a new draft before debounce keeps a restorable copy`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val viewModel = viewModel(repository)
+        viewModel.onContentChange("new draft")
+        viewModel.deleteNote()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isDeleted)
+        assertEquals("new draft", repository.notes.value.single().content)
+        assertTrue(repository.notes.value.single().deletedAt != null)
+    }
+
+    @Test
+    fun `failed final save prevents trashing and keeps the draft available`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val id = repository.createNote("title", "old")
+        val viewModel = viewModel(repository, noteId = id)
+        runCurrent()
+        viewModel.onContentChange("keep this draft")
+        repository.failWrites = true
+        viewModel.deleteNote()
+        runCurrent()
+        assertTrue(!viewModel.uiState.value.isDeleted)
+        assertTrue(viewModel.uiState.value.saveStatus is SaveStatus.Failed)
+        assertNull(repository.notes.value.single().deletedAt)
+        assertEquals("keep this draft", viewModel.uiState.value.content)
+        repository.failWrites = false
+        viewModel.flush()
+        assertEquals("keep this draft", repository.notes.value.single().content)
+    }
+
+    @Test
     fun `deleting during the first slow save does not leave an orphan note`() = runTest(mainDispatcher) {
         val repository = FakeNoteRepository().apply { slowCreateMillis = 5_000 }
         val viewModel = viewModel(repository)

@@ -248,7 +248,14 @@ class WebDavClient(
     }
 
     private fun readBodyText(response: Response): String = try {
-        response.body?.string().orEmpty()
+        response.body?.let { body ->
+            if (body.contentLength() > MAX_PROPFIND_BYTES) {
+                throw BackupException(BackupErrorKind.INVALID_FORMAT, "WebDAV response is too large")
+            }
+            body.byteStream().use { input ->
+                String(readBackupBytes(input, MAX_PROPFIND_BYTES), body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8)
+            }
+        }.orEmpty()
     } catch (e: IOException) {
         throw BackupException(BackupErrorKind.NETWORK, "Could not read the WebDAV response", e, retryable = true)
     }
@@ -328,6 +335,7 @@ class WebDavClient(
     }
 
     companion object {
+        private const val MAX_PROPFIND_BYTES = 4L * 1024 * 1024
         private const val HTTP_NOT_FOUND = 404
         private const val HTTP_CONFLICT = 409
         private const val USER_AGENT = "open-notes-backup/1.0"

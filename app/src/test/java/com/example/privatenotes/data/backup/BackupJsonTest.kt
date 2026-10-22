@@ -17,6 +17,16 @@ class BackupJsonTest {
     )
 
     @Test
+    fun `invalid UTF8 is rejected instead of silently corrupting note text`() {
+        val bytes = json.encode(valid.copy(notes = listOf(backupNote("note-1", title = "UTF8CANARY"))))
+        val needle = "UTF8CANARY".toByteArray()
+        val start = bytes.indices.first { i -> i + needle.size <= bytes.size && bytes.copyOfRange(i, i + needle.size).contentEquals(needle) }
+        bytes[start] = 0xFF.toByte()
+        val failure = assertThrows(BackupException::class.java) { json.decode(bytes) }
+        assertEquals(BackupErrorKind.INVALID_FORMAT, failure.kind)
+    }
+
+    @Test
     fun `a valid document survives encode and decode`() {
         val decoded = json.decode(json.encode(valid))
 

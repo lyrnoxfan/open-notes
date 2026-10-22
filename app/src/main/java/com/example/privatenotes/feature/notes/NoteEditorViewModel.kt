@@ -229,15 +229,25 @@ class NoteEditorViewModel(
 
     fun deleteNote() {
         if (deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
+        val snapshot = Snapshot(revision, _uiState.value.title, _uiState.value.content)
+        val keepInTrash = noteSettings.trashEnabled.value
         deleting = true
         pending.value = null
         externalScope.launch(Dispatchers.Main.immediate) {
+            // Trash is recoverable, so the copy must include even the last debounced keystroke.
+            // Keep input frozen while flushing and do not close the editor on a failed save.
+            if (keepInTrash) {
+                if (!persist(snapshot, allowDeleting = true)) {
+                    deleting = false
+                    return@launch
+                }
+            }
             // An in-flight create must publish its id before we decide there is no row to delete.
             mutex.withLock {
                 try {
                     val id = noteId
                     if (id != null) {
-                        if (noteSettings.trashEnabled.value) repository.moveToTrash(id)
+                        if (keepInTrash) repository.moveToTrash(id)
                         else repository.deletePermanentlyAll(listOf(id))
                     }
                     deleted = true
@@ -254,12 +264,12 @@ class NoteEditorViewModel(
         }
     }
 
-    private suspend fun persist(snapshot: Snapshot) {
+    private suspend fun persist(snapshot: Snapshot, allowDeleting: Boolean = false): Boolean =
         mutex.withLock {
-            if (deleted || deleting) return
-            if (snapshot.revision <= persistedRevision) return
+            if (deleted || (deleting && !allowDeleting)) return@withLock false
+            if (snapshot.revision <= persistedRevision) return@withLock true
             // Opening the editor and leaving without typing must not create an empty note.
-            if (noteId == null && snapshot.title.isBlank() && snapshot.content.isBlank()) return
+            if (noteId == null && snapshot.title.isBlank() && snapshot.content.isBlank()) return@withLock true
 
             _uiState.update { it.copy(saveStatus = SaveStatus.Saving) }
             try {
@@ -281,6 +291,7 @@ class NoteEditorViewModel(
                 // After the status says "saved": an upload must never make a successful local
                 // write look like it is still in progress.
                 runCatching { onPersisted() }
+                true
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
@@ -289,9 +300,9 @@ class NoteEditorViewModel(
                 _uiState.update {
                     it.copy(saveStatus = SaveStatus.Failed(failure.message ?: SAVE_ERROR))
                 }
+                false
             }
         }
-    }
 
     private suspend fun attachPendingTags(createdNoteId: String) {
         val waiting = _uiState.value.pendingTags

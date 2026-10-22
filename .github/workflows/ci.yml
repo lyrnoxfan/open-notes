@@ -59,6 +59,10 @@ jobs:
   # suite that already passes locally before a push. They are for changes that land on main and
   # for pull requests - work in progress on a feature branch does not need to pay for them.
   instrumented:
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [26, 35]
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     # Booting an emulator on a shared runner plus 31 device tests; 30 minutes is the budget the
@@ -89,7 +93,7 @@ jobs:
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
-          api-level: 34
+          api-level: ${{ matrix.api-level }}
           # The app needs no Play Services, so the plain AOSP image boots faster.
           target: default
           arch: x86_64
@@ -99,15 +103,7 @@ jobs:
           emulator-boot-timeout: 900
           # The seeding, reinstall and IME scripts run against their own install; see
           # app/src/androidTest/.../ScriptDriven.kt for why they cannot share this suite.
-          script: |
-            set +e
-            ./gradlew --no-daemon --stacktrace connectedCheck -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.example.privatenotes.ScriptDriven
-            result=$?
-            mkdir -p app/build/ui-previews
-            for name in list-light list-dark editor-light editor-dark; do
-              adb exec-out run-as com.example.privatenotes cat "files/ui-previews/$name.png" > "app/build/ui-previews/$name.png" || rm -f "app/build/ui-previews/$name.png"
-            done
-            exit "$result"
+          script: bash scripts/ci-device-check.sh
 
       # Without repository admin rights the device-test log cannot be fetched over the API, but
       # annotations are public. One annotation per failure puts the test name and its assertion
@@ -120,7 +116,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: instrumented-test-report
+          name: instrumented-test-report-api${{ matrix.api-level }}
           path: |
             app/build/reports/androidTests/connected
             app/build/outputs/androidTest-results/connected
@@ -131,7 +127,19 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-previews
+          name: ui-previews-api${{ matrix.api-level }}
           path: app/build/ui-previews/*.png
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload isolated device validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolated-device-reports-api${{ matrix.api-level }}
+          path: |
+            build/e2e/*.txt
+            build/canary/*.txt
+            build/ime-roundtrip.txt
           retention-days: 14
           if-no-files-found: ignore
