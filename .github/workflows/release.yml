@@ -81,10 +81,19 @@ jobs:
           test -f "$apk"
           build_tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           "$build_tools/apksigner" verify --verbose "$apk"
-          actual=$("$build_tools/apksigner" verify --print-certs "$apk" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          # Extract the SHA-256 fingerprint without depending on apksigner's
+          # exact line format (it varies across build-tools versions).
+          # SHA-256 = 32 bytes -> colon form carries 31 colons; SHA-1/MD5 lines can't match.
+          certs=$("$build_tools/apksigner" verify --print-certs "$apk" 2>/dev/null)
+          actual=$(printf '%s' "$certs" | grep -oiE '([0-9a-f]{2}:){31}[0-9a-f]{2}' | head -n 1 || true)
+          if [ -z "$actual" ]; then
+            # Fallback: digest printed without colons (64 hex chars).
+            actual=$(printf '%s' "$certs" | grep -oiE '[0-9a-f]{64}' | head -n 1 | sed -E 's/(..)/\1:/g; s/:$//' || true)
+          fi
+          actual=$(printf '%s' "$actual" | tr '[:lower:]' '[:upper:]')
+          expected=$(printf '%s' "${EXPECTED_CERT_SHA256:-}" | tr '[:lower:]' '[:upper:]')
           echo "APK certificate SHA-256: $actual"
-          if [ -n "${EXPECTED_CERT_SHA256:-}" ] && [ "$actual" != "$EXPECTED_CERT_SHA256" ]; then
+          if [ -n "$expected" ] && [ "$actual" != "$expected" ]; then
             echo "Signed with an unexpected certificate; refusing to publish."
             exit 1
           fi
