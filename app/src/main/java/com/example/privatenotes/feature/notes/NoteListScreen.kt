@@ -583,12 +583,6 @@ private fun NoteRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .clip(MaterialTheme.shapes.medium)
             .background(if (picked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-            .border(
-                width = 1.dp,
-                color = if (picked) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                shape = MaterialTheme.shapes.medium,
-            )
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .semantics {
                 if (selecting) selected = picked
