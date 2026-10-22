@@ -45,6 +45,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
@@ -69,8 +70,6 @@ import androidx.lifecycle.Lifecycle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import android.os.SystemClock
-import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.foundation.ScrollState
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -135,30 +134,6 @@ fun NoteEditorScreen(
 }
 
 /**
- * A ScrollState that ignores programmatic scroll requests while the viewport is settling
- * (keyboard animating). BasicTextField's native cursor-following fires immediately on tap,
- * using the pre-animation viewport to compute its target - that stale computation is the
- * first-tap pan. User drags are unaffected (they don't go through scrollTo/animateScrollTo).
- * The settle-aware effect in EditorBody runs after the gate opens and performs the one true
- * scroll, if any is needed.
- */
-private class GatedScrollState(
-    private val isSettling: () -> Boolean,
-) : ScrollState(0) {
-    override suspend fun scrollTo(value: Int) {
-        if (!isSettling()) super.scrollTo(value)
-    }
-
-    override suspend fun animateScrollTo(
-        value: Int,
-        animationSpec: AnimationSpec<Float>,
-        initialVelocity: Float,
-    ) {
-        if (!isSettling()) super.animateScrollTo(value, animationSpec, initialVelocity)
-    }
-}
-
-/**
  * The editor as a pure function of its state, so every combination can be previewed: empty,
  * long, preview mode, saving, failed.
  */
@@ -205,13 +180,12 @@ internal fun EditorContent(
 
     // One body scroll state for the whole screen: EditorBody leaves composition when the preview
     // is shown, and a remember inside it would silently reset the reader to the top on return.
-    // Gated: while the keyboard animates the viewport, programmatic scrolls (the field's native
-    // cursor-following firing on stale geometry) are dropped; the settle-aware effect below does
-    // the one true scroll after. User drags are never gated.
     var lastViewportChange by remember { mutableLongStateOf(0L) }
-    val bodyScrollState = remember {
-        GatedScrollState { SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS }
-    }
+    val bodyScrollState = rememberScrollState()
+    // Scroll position before the keyboard started animating. If the field's native
+    // cursor-following pans during the animation (stale viewport geometry), the settle-aware
+    // effect restores this when the caret turns out to be visible anyway.
+    var savedScrollValue by remember { mutableIntStateOf(0) }
 
     // One-way sync from the ViewModel: only when the text actually changed underneath the field
     // (first load, an import, another screen's edit) and never while a composition is open - that
@@ -378,11 +352,18 @@ internal fun EditorContent(
                                 },
                                 scrollState = bodyScrollState,
                                 onViewportChanged = {
-                                    lastViewportChange = SystemClock.uptimeMillis()
+                                    val now = SystemClock.uptimeMillis()
+                                    // Start of a new settle period (was stable before): snapshot
+                                    // the scroll position so a phantom pan can be undone after.
+                                    if (now - lastViewportChange >= VIEWPORT_SETTLE_MS) {
+                                        savedScrollValue = bodyScrollState.value
+                                    }
+                                    lastViewportChange = now
                                 },
                                 isViewportSettling = {
                                     SystemClock.uptimeMillis() - lastViewportChange < VIEWPORT_SETTLE_MS
                                 },
+                                savedScrollValue = { savedScrollValue },
                             )
                         }
                     }
@@ -429,6 +410,7 @@ private fun EditorBody(
     scrollState: ScrollState,
     onViewportChanged: () -> Unit,
     isViewportSettling: () -> Boolean,
+    savedScrollValue: () -> Int,
 ) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -495,6 +477,12 @@ private fun EditorBody(
             bottom > scrollState.value + viewportHeight -> bottom - viewportHeight
             else -> {
                 activeTarget = null
+                // Caret is visible: if the native cursor-following panned during the keyboard
+                // animation (stale geometry), undo it by restoring the pre-animation position.
+                val saved = savedScrollValue()
+                if (scrollState.value != saved) {
+                    scrollState.scrollTo(saved)
+                }
                 return@LaunchedEffect
             }
         }.coerceIn(0, scrollState.maxValue)
