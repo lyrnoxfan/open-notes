@@ -253,7 +253,8 @@ fun NoteEditorScreen(
 @Composable
 private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
     val titleStyle = MaterialTheme.typography.headlineSmall
-    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    // No alpha on the placeholder: at 70% the ink drops under 4.5:1 in dark mode.
+    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BasicTextField(
         value = title,
@@ -286,7 +287,7 @@ private fun EditorBody(
     onValueChange: (TextFieldValue) -> Unit,
 ) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
-    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BasicTextField(
         value = TextFieldValue(text = content, selection = selection),
