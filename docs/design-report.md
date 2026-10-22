@@ -179,6 +179,27 @@ failures 0 / errors 0）。
 修法是在那个唯一入口加守卫（取连接前查一次、进入开连接的临界区再查一次）：锁定时拒绝打开。
 解锁后的行为不变，仍然是懒打开、解锁后重开。修复后该类测试通过，完整套件 31/31 绿。
 
+## 4.1 CI 里的设备测试
+
+`ci.yml` 原本只跑单元测试 + lint + debug 构建；设备测试（锁屏、编辑自动保存、备份往返）只在
+本地跑过。现在多了一个 `instrumented` job：
+
+- `reactivecircus/android-emulator-runner@v2.38.0`（当前最新版），API 34、AOSP 镜像、x86_64、
+  `disable-animations: true`；先开 KVM 再起模拟器，否则 30 分钟内起不来。
+- 跑 `./gradlew connectedCheck`，超时 30 分钟，模拟器启动超时 900 秒。
+- **只在 main push 和 PR 上跑**，feature 分支 push 跳过——这是 job 自己的条件，不只是触发器
+  现在的写法。
+- 结果（HTML + XML）作为 artifact 上传，失败也传，保留 14 天。
+- 失败时 `scripts/annotate-device-failures.py` 把每个失败的测试名与断言消息打成 GitHub
+  annotation：日志要仓库管理员权限才读得到，annotation 是公开的。
+
+绿：<https://github.com/lyrnoxfan/open-notes/actions/runs/39708050458>（build 1.1 分钟，
+instrumented 3.1 分钟，31 个设备测试全过，`instrumented-test-report` 90 KB）。
+
+第一次跑（`39707352438`）instrumented 失败，当时还没有 annotation 步骤，拿不到是哪个测试；
+补上 annotation 后用同一份代码重跑即绿，判断是共享 runner 上的设备测试抖动，不是代码问题。
+如果它再红，annotation 会直接指出测试名。
+
 ## 5. 跳过的项
 
 - **Roborazzi 截图测试**：没装。它要求 Robolectric 与 Compose 版本严格配套，装不上就得动
