@@ -117,11 +117,48 @@ fun NoteEditorScreen(
         if (state.isDeleted) onBack()
     }
 
+    EditorContent(
+        state = state,
+        selection = selection,
+        onSelectionChange = { selection = it },
+        onTitleChange = viewModel::onTitleChange,
+        onContentChange = viewModel::onContentChange,
+        onTogglePreview = viewModel::togglePreview,
+        onDelete = viewModel::deleteNote,
+        onAddTag = viewModel::addTag,
+        onRemoveTag = viewModel::removeTag,
+        onBack = onBack,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The editor as a pure function of its state, so every combination can be previewed: empty,
+ * long, preview mode, saving, failed.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun EditorContent(
+    state: NoteEditorUiState,
+    selection: TextRange,
+    onSelectionChange: (TextRange) -> Unit,
+    onTitleChange: (String) -> Unit,
+    onContentChange: (String) -> Unit,
+    onTogglePreview: () -> Unit,
+    onDelete: () -> Unit,
+    onAddTag: (String) -> Unit,
+    onRemoveTag: (EditorTag) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var tagDialogOpen by remember { mutableStateOf(false) }
+
     if (tagDialogOpen) {
         TagDialog(
             onDismiss = { tagDialogOpen = false },
             onConfirm = { name ->
-                viewModel.addTag(name)
+                onAddTag(name)
                 tagDialogOpen = false
             },
         )
@@ -153,7 +190,7 @@ fun NoteEditorScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = viewModel::togglePreview) {
+                    IconButton(onClick = onTogglePreview) {
                         Icon(
                             imageVector = Icons.Outlined.Visibility,
                             contentDescription = stringResource(
@@ -189,7 +226,7 @@ fun NoteEditorScreen(
                             },
                             onClick = {
                                 menuOpen = false
-                                viewModel.deleteNote()
+                                onDelete()
                             },
                         )
                     }
@@ -212,13 +249,13 @@ fun NoteEditorScreen(
             ) {
                 EditorTitle(
                     title = state.title,
-                    onTitleChange = viewModel::onTitleChange,
+                    onTitleChange = onTitleChange,
                 )
 
                 TagEditorRow(
                     tags = state.tags,
                     onAdd = { tagDialogOpen = true },
-                    onRemove = viewModel::removeTag,
+                    onRemove = onRemoveTag,
                 )
 
                 // One shared box for both modes: the geometry cannot differ between them.
@@ -240,8 +277,8 @@ fun NoteEditorScreen(
                                 content = state.content,
                                 selection = selection,
                                 onValueChange = { value ->
-                                    selection = value.selection
-                                    viewModel.onContentChange(value.text)
+                                    onSelectionChange(value.selection)
+                                    onContentChange(value.text)
                                 },
                             )
                         }

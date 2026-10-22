@@ -100,6 +100,53 @@ fun NoteListScreen(
     val undoLabel = stringResource(R.string.note_list_undo)
     val deletedLabel = stringResource(R.string.note_list_moved_to_trash)
 
+    NoteListContent(
+        state = state,
+        snackbarHostState = snackbarHostState,
+        onCreateNote = onCreateNote,
+        onOpenNote = onOpenNote,
+        onOpenTrash = onOpenTrash,
+        onOpenSettings = onOpenSettings,
+        onQueryChange = viewModel::onQueryChange,
+        onTagSelected = { name ->
+            viewModel.onTagSelected(state.tags.firstOrNull { it.name == name }?.id)
+        },
+        onClearFilters = viewModel::clearFilters,
+        onDeleteNote = { noteId ->
+            viewModel.deleteNote(noteId)
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = deletedLabel,
+                    actionLabel = undoLabel,
+                    duration = SnackbarDuration.Short,
+                )
+                if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete(noteId)
+            }
+        },
+    )
+}
+
+/**
+ * The list as a pure function of its state.
+ *
+ * Split from the screen so every branch - loading, error, filtered-empty, empty, long - can be
+ * rendered in a `@Preview` without a database, a ViewModel or a device.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun NoteListContent(
+    state: NoteListUiState,
+    snackbarHostState: SnackbarHostState,
+    onCreateNote: () -> Unit,
+    onOpenNote: (String) -> Unit,
+    onOpenTrash: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTagSelected: (String?) -> Unit,
+    onClearFilters: () -> Unit,
+    onDeleteNote: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -162,13 +209,13 @@ fun NoteListScreen(
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Column(modifier = Modifier.readingWidth()) {
-                    SearchField(query = state.query, onQueryChange = viewModel::onQueryChange)
+                    SearchField(query = state.query, onQueryChange = onQueryChange)
 
                     TagFilterRow(
                         tags = state.tags.map { it.name },
                         selectedTag = state.tags.firstOrNull { it.id == state.selectedTagId }?.name,
                         onSelect = { name ->
-                            viewModel.onTagSelected(state.tags.firstOrNull { it.name == name }?.id)
+                            onTagSelected(state.tags.firstOrNull { it.name == name }?.id)
                         },
                     )
                 }
@@ -185,7 +232,7 @@ fun NoteListScreen(
 
                     state.isFilterEmpty -> NoMatches(
                         query = state.query,
-                        onClear = viewModel::clearFilters,
+                        onClear = onClearFilters,
                     )
 
                     state.notes.isEmpty() -> EmptyState()
@@ -207,21 +254,8 @@ fun NoteListScreen(
                                     ),
                                     entry = entry,
                                     onClick = { onOpenNote(entry.note.id) },
-                                    onDelete = {
-                                        val noteId = entry.note.id
-                                        viewModel.deleteNote(noteId)
-                                        scope.launch {
-                                            val result = snackbarHostState.showSnackbar(
-                                                message = deletedLabel,
-                                                actionLabel = undoLabel,
-                                                duration = SnackbarDuration.Short,
-                                            )
-                                            if (result == SnackbarResult.ActionPerformed) {
-                                                viewModel.undoDelete(noteId)
-                                            }
-                                        }
-                                    },
-                                    deleteActionLabel = deletedLabel,
+                                    onDelete = { onDeleteNote(entry.note.id) },
+                                    deleteActionLabel = stringResource(R.string.note_list_moved_to_trash),
                                 )
                                 HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 20.dp),

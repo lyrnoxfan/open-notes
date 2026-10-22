@@ -62,6 +62,34 @@ fun TrashScreen(
 
     LaunchedEffect(Unit) { viewModel.purgeExpired() }
 
+    TrashContent(
+        notes = state.notes,
+        isLoading = state.isLoading,
+        errorMessage = state.errorMessage,
+        onRestore = viewModel::restore,
+        onDeleteForever = viewModel::permanentlyDelete,
+        onBack = onBack,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The trash as a pure function of its state, so the three branches can be previewed without a
+ * database.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun TrashContent(
+    notes: List<NoteEntity>,
+    isLoading: Boolean,
+    errorMessage: String?,
+    onRestore: (String) -> Unit,
+    onDeleteForever: (String) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var pendingDeletion by remember { mutableStateOf<NoteEntity?>(null) }
+
     pendingDeletion?.let { note ->
         AlertDialog(
             onDismissRequest = { pendingDeletion = null },
@@ -70,7 +98,7 @@ fun TrashScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.permanentlyDelete(note.id)
+                        onDeleteForever(note.id)
                         pendingDeletion = null
                     },
                 ) {
@@ -124,15 +152,15 @@ fun TrashScreen(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                state.isLoading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                state.errorMessage != null -> Text(
-                    text = state.errorMessage!!,
+                isLoading -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                errorMessage != null -> Text(
+                    text = errorMessage!!,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(32.dp),
                 )
                 // One sentence, like the empty note list (design.md §9).
-                state.notes.isEmpty() -> Text(
+                notes.isEmpty() -> Text(
                     text = stringResource(R.string.trash_empty_title),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -142,10 +170,10 @@ fun TrashScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 8.dp),
                 ) {
-                    items(state.notes, key = { it.id }) { note ->
+                    items(notes, key = { it.id }) { note ->
                         TrashRow(
                             note = note,
-                            onRestore = { viewModel.restore(note.id) },
+                            onRestore = { onRestore(note.id) },
                             onDeleteForever = { pendingDeletion = note },
                         )
                         HorizontalDivider(

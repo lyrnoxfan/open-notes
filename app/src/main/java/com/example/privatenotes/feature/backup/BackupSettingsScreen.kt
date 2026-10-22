@@ -66,6 +66,29 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
+ * Everything the settings page can ask the app to do.
+ *
+ * Passed as one value, so the screen can be previewed with the defaults and rendered in a test
+ * without wiring fifteen lambdas by hand.
+ */
+internal class SettingsActions(
+    val onChooseDirectory: () -> Unit = {},
+    val onConfirmLocalBackup: (CharArray?) -> Unit = {},
+    val onConfirmRemoteBackup: (CharArray?) -> Unit = {},
+    val onBaseUrlChange: (String) -> Unit = {},
+    val onUsernameChange: (String) -> Unit = {},
+    val onRemoteDirectoryChange: (String) -> Unit = {},
+    val onPasswordChange: (String) -> Unit = {},
+    val onSaveWebDav: () -> Unit = {},
+    val onTestConnection: () -> Unit = {},
+    val onPickImportFile: () -> Unit = {},
+    val onCancelImport: () -> Unit = {},
+    val onConfirmImport: (CharArray?) -> Unit = {},
+    val onDismissImportReport: () -> Unit = {},
+    val onBack: () -> Unit = {},
+)
+
+/**
  * Settings (§4.3, §9.6).
  *
  * Six sections in a fixed order - app lock, local backup, WebDAV, import, backup status, about.
@@ -88,9 +111,6 @@ fun BackupSettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-
-    var showLocalBackupDialog by rememberSaveable { mutableStateOf(false) }
-    var showRemoteBackupDialog by rememberSaveable { mutableStateOf(false) }
 
     val directoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -121,6 +141,47 @@ fun BackupSettingsScreen(
             viewModel.consumeMessage()
         }
     }
+
+    val actions = SettingsActions(
+        onChooseDirectory = { directoryPicker.launch(null) },
+        onConfirmLocalBackup = viewModel::backupLocal,
+        onConfirmRemoteBackup = viewModel::backupRemote,
+        onBaseUrlChange = viewModel::onBaseUrlChange,
+        onUsernameChange = viewModel::onUsernameChange,
+        onRemoteDirectoryChange = viewModel::onRemoteDirectoryChange,
+        onPasswordChange = viewModel::onPasswordChange,
+        onSaveWebDav = viewModel::saveWebDav,
+        onTestConnection = viewModel::testConnection,
+        onPickImportFile = { importPicker.launch(arrayOf("*/*")) },
+        onCancelImport = viewModel::cancelImport,
+        onConfirmImport = { password -> viewModel.confirmImport(password) },
+        onDismissImportReport = viewModel::dismissImportReport,
+        onBack = onBack,
+    )
+
+    SettingsContent(
+        state = state,
+        actions = actions,
+        snackbarHostState = snackbarHostState,
+        lockRow = { AppLockSection(lock = appLock, authenticator = authenticator) },
+        onBack = onBack,
+        modifier = modifier,
+    )
+}
+
+/** Settings as a pure function of its state and the actions it is allowed to take. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsContent(
+    state: BackupSettingsUiState,
+    actions: SettingsActions,
+    snackbarHostState: SnackbarHostState,
+    lockRow: @Composable () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showLocalBackupDialog by rememberSaveable { mutableStateOf(false) }
+    var showRemoteBackupDialog by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier,
@@ -170,14 +231,14 @@ fun BackupSettingsScreen(
 
             item {
                 SettingsSection(title = stringResource(R.string.settings_section_lock)) {
-                    AppLockSection(lock = appLock, authenticator = authenticator)
+                    lockRow()
                 }
             }
 
             item {
                 LocalBackupSection(
                     state = state,
-                    onChooseDirectory = { directoryPicker.launch(null) },
+                    onChooseDirectory = actions.onChooseDirectory,
                     onBackupNow = { showLocalBackupDialog = true },
                 )
             }
@@ -185,12 +246,12 @@ fun BackupSettingsScreen(
             item {
                 WebDavSection(
                     state = state,
-                    onBaseUrlChange = viewModel::onBaseUrlChange,
-                    onUsernameChange = viewModel::onUsernameChange,
-                    onRemoteDirectoryChange = viewModel::onRemoteDirectoryChange,
-                    onPasswordChange = viewModel::onPasswordChange,
-                    onSave = viewModel::saveWebDav,
-                    onTest = viewModel::testConnection,
+                    onBaseUrlChange = actions.onBaseUrlChange,
+                    onUsernameChange = actions.onUsernameChange,
+                    onRemoteDirectoryChange = actions.onRemoteDirectoryChange,
+                    onPasswordChange = actions.onPasswordChange,
+                    onSave = actions.onSaveWebDav,
+                    onTest = actions.onTestConnection,
                     onUploadNow = { showRemoteBackupDialog = true },
                 )
             }
@@ -198,7 +259,7 @@ fun BackupSettingsScreen(
             item {
                 ImportSection(
                     state = state,
-                    onPickFile = { importPicker.launch(arrayOf("*/*")) },
+                    onPickFile = actions.onPickImportFile,
                 )
             }
 
@@ -219,7 +280,7 @@ fun BackupSettingsScreen(
             onDismiss = { showLocalBackupDialog = false },
             onConfirm = { password ->
                 showLocalBackupDialog = false
-                viewModel.backupLocal(password)
+                actions.onConfirmLocalBackup(password)
             },
         )
     }
@@ -231,7 +292,7 @@ fun BackupSettingsScreen(
             onDismiss = { showRemoteBackupDialog = false },
             onConfirm = { password ->
                 showRemoteBackupDialog = false
-                viewModel.backupRemote(password)
+                actions.onConfirmRemoteBackup(password)
             },
         )
     }
@@ -243,12 +304,12 @@ fun BackupSettingsScreen(
                 title = stringResource(R.string.backup_import_password_title),
                 body = stringResource(R.string.backup_import_password_body),
                 confirmLabel = stringResource(R.string.backup_import_confirm_action),
-                onDismiss = viewModel::cancelImport,
-                onConfirm = { password -> viewModel.confirmImport(password) },
+                onDismiss = actions.onCancelImport,
+                onConfirm = { password -> actions.onConfirmImport(password) },
             )
         } else {
             AlertDialog(
-                onDismissRequest = viewModel::cancelImport,
+                onDismissRequest = actions.onCancelImport,
                 title = { Text(stringResource(R.string.backup_import_confirm_title)) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -264,12 +325,12 @@ fun BackupSettingsScreen(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { viewModel.confirmImport(null) }) {
+                    TextButton(onClick = { actions.onConfirmImport(null) }) {
                         Text(stringResource(R.string.backup_import_confirm_action))
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = viewModel::cancelImport) {
+                    TextButton(onClick = actions.onCancelImport) {
                         Text(stringResource(R.string.backup_cancel))
                     }
                 },
@@ -278,7 +339,7 @@ fun BackupSettingsScreen(
     }
 
     state.importReport?.let { outcome ->
-        ImportReportDialog(outcome = outcome, onClose = viewModel::dismissImportReport)
+        ImportReportDialog(outcome = outcome, onClose = actions.onDismissImportReport)
     }
 }
 
