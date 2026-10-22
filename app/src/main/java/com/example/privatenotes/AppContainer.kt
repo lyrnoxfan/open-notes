@@ -27,6 +27,7 @@ import com.example.privatenotes.security.AndroidKeystoreSecretCipher
 import com.example.privatenotes.security.AppLock
 import com.example.privatenotes.security.AppLockAuthenticator
 import com.example.privatenotes.security.AppLockManager
+import com.example.privatenotes.security.AppLockState
 import com.example.privatenotes.security.AppLockSettings
 import com.example.privatenotes.security.DatabaseKeyManager
 import com.example.privatenotes.security.SharedPreferencesAppLockSettings
@@ -71,12 +72,28 @@ class AppContainer(context: Context) {
      *
      * Not `by lazy`: §6.2 wants the connection closed while the app is locked, which means it has
      * to be reopenable later with the same key.
+     *
+     * Refuses to open while the app is locked. The lock closes the connection, but a collection
+     * that was already running (a list query still inside its `WhileSubscribed` window, a backup
+     * worker that started a moment earlier) could otherwise open it again right afterwards and
+     * leave an unlocked connection behind a locked screen. Refusing is the only place that can
+     * hold the invariant: every reader goes through this getter.
      */
     val database: AppDatabase
-        get() = databaseInstance ?: synchronized(databaseLock) {
-            databaseInstance ?: EncryptedDatabaseProvider.open(appContext, keyManager)
-                .also { databaseInstance = it }
+        get() {
+            checkUnlocked()
+            return databaseInstance ?: synchronized(databaseLock) {
+                checkUnlocked()
+                databaseInstance ?: EncryptedDatabaseProvider.open(appContext, keyManager)
+                    .also { databaseInstance = it }
+            }
         }
+
+    private fun checkUnlocked() {
+        check(appLock.state.value != AppLockState.Locked) {
+            "database access while the app is locked"
+        }
+    }
 
     val noteRepository: NoteRepository
         get() = RoomNoteRepository(database, timeSource)
