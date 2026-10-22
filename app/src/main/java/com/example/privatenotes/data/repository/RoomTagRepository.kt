@@ -53,6 +53,8 @@ class RoomTagRepository(
         return true
     }
 
+    override suspend fun usageCount(tagId: String): Int = tagDao.usageCount(tagId)
+
     override suspend fun deleteTag(tagId: String) {
         // The join table has ON DELETE CASCADE on tagId, so references go with it.
         tagDao.delete(tagId)

@@ -17,6 +17,8 @@ import com.example.privatenotes.feature.notes.NoteEditorScreen
 import com.example.privatenotes.feature.notes.NoteEditorViewModel
 import com.example.privatenotes.feature.notes.NoteListScreen
 import com.example.privatenotes.feature.notes.NoteListViewModel
+import com.example.privatenotes.feature.tags.TagManagementScreen
+import com.example.privatenotes.feature.tags.TagManagementViewModel
 import com.example.privatenotes.feature.trash.TrashScreen
 import com.example.privatenotes.feature.trash.TrashViewModel
 
@@ -27,6 +29,7 @@ object Routes {
     const val NOTES = "notes"
     const val TRASH = "trash"
     const val BACKUP = "backup"
+    const val TAGS = "tags"
     const val EDITOR = "editor"
     const val ARG_NOTE_ID = "noteId"
 
@@ -99,6 +102,17 @@ fun AppNavigation(container: AppContainer) {
                 viewModel = backupViewModel,
                 appLock = container.appLock,
                 authenticator = container.appLockAuthenticator,
+                onOpenTags = { navController.navigate(Routes.TAGS) },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Routes.TAGS) {
+            val tagViewModel: TagManagementViewModel = viewModel(
+                factory = TagManagementViewModel.factory({ container.tagRepository }),
+            )
+            TagManagementScreen(
+                viewModel = tagViewModel,
                 onBack = { navController.popBackStack() },
             )
         }

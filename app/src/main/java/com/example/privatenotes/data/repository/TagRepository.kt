@@ -22,6 +22,14 @@ interface TagRepository {
 
     suspend fun deleteTag(tagId: String)
 
+    /**
+     * How many notes carry this tag.
+     *
+     * The tag manager shows it next to each name: deleting a tag that is used by thirty notes is a
+     * different decision from deleting an empty one, and the confirmation has to say which.
+     */
+    suspend fun usageCount(tagId: String): Int
+
     fun observeTagsForNote(noteId: String): Flow<List<TagEntity>>
 
     suspend fun attachTag(noteId: String, tagId: String)

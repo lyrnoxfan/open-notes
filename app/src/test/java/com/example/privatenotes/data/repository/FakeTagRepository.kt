@@ -40,6 +40,8 @@ class FakeTagRepository : TagRepository {
         return true
     }
 
+    override suspend fun usageCount(tagId: String): Int = 0
+
     override suspend fun deleteTag(tagId: String) {
         tags.value = tags.value.filterNot { it.id == tagId }
     }

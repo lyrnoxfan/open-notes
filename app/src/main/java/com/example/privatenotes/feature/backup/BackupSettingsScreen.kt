@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -72,6 +73,7 @@ import java.time.format.DateTimeFormatter
  * without wiring fifteen lambdas by hand.
  */
 internal class SettingsActions(
+    val onOpenTags: () -> Unit = {},
     val onChooseDirectory: () -> Unit = {},
     val onConfirmLocalBackup: (CharArray?) -> Unit = {},
     val onConfirmRemoteBackup: (CharArray?) -> Unit = {},
@@ -105,6 +107,7 @@ fun BackupSettingsScreen(
     viewModel: BackupSettingsViewModel,
     appLock: AppLock,
     authenticator: AppLockAuthenticator,
+    onOpenTags: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -156,6 +159,7 @@ fun BackupSettingsScreen(
         onCancelImport = viewModel::cancelImport,
         onConfirmImport = { password -> viewModel.confirmImport(password) },
         onDismissImportReport = viewModel::dismissImportReport,
+        onOpenTags = onOpenTags,
         onBack = onBack,
     )
 
@@ -261,6 +265,19 @@ internal fun SettingsContent(
                     state = state,
                     onPickFile = actions.onPickImportFile,
                 )
+            }
+
+            item {
+                SettingsSection(title = stringResource(R.string.settings_section_tags)) {
+                    TextButton(
+                        onClick = actions.onOpenTags,
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.testTag(SettingsTags.TAGS),
+                    ) {
+                        Text(stringResource(R.string.settings_section_tags))
+                    }
+                    SectionHint(stringResource(R.string.settings_tags_hint))
+                }
             }
 
             item {
@@ -960,3 +977,8 @@ private fun formatBackupTimestamp(epochMillis: Long): String =
 private const val MIN_PASSWORD_LENGTH = 8
 
 private const val LICENCE_ASSET = "licenses/lxgw-wenkai-OFL.txt"
+
+/** Stable handles for instrumented UI tests. */
+object SettingsTags {
+    const val TAGS = "settings_tags"
+}

@@ -140,6 +140,7 @@ class NoteListSearchDebounceTest {
         override suspend fun ensureTag(name: String): String? = null
         override suspend fun renameTag(tagId: String, newName: String): Boolean = false
         override suspend fun deleteTag(tagId: String) = Unit
+        override suspend fun usageCount(tagId: String): Int = 0
         override suspend fun attachTag(noteId: String, tagId: String) = Unit
         override suspend fun detachTag(noteId: String, tagId: String) = Unit
         override fun observeTagsForNote(noteId: String): Flow<List<TagEntity>> = flowOf(emptyList())
