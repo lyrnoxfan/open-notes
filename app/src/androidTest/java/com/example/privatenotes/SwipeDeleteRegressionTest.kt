@@ -86,10 +86,19 @@ class SwipeDeleteRegressionTest {
         container.noteSettings.setTrashEnabled(false)
         val id = seed("关闭回收站保护")
         ready(id)
+        // Updating SharedPreferences is synchronous, observing it in the list is not.
+        // Wait for the actual screen to reflect "trash off" before the gesture.
+        compose.waitUntil(10000) {
+            compose.onAllNodesWithTag(NoteListTags.TRASH).fetchSemanticsNodes().isEmpty()
+        }
         row(id).performTouchInput { swipeRight() }
         compose.waitForIdle()
         assertNotNull(runBlocking { repo.findById(id) })
-        row(id).performTouchInput { longClick() }
+        assertNull("A disabled swipe must not soft-delete", runBlocking { repo.findById(id)!!.deletedAt })
+        evidence("05-after-disabled-swipe")
+        android.util.Log.i("SwipeRegression", compose.onRoot().printToString())
+        compose.onNodeWithTag(EditorTags.CONTENT).assertDoesNotExist()
+        row(id).assertExists().performTouchInput { longClick() }
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.note_list_delete_selected)).performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.dialog_cancel)).performClick()
         assertNotNull(runBlocking { repo.findById(id) })
