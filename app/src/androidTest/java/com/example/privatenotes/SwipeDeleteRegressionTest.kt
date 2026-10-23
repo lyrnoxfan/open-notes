@@ -54,8 +54,8 @@ class SwipeDeleteRegressionTest {
             bitmap.recycle()
         }
     }
-    @Test fun rightSwipeMovesToTrashAndUndoRestoresSharedAndExclusiveTags() {
-        val one = seed("要右滑的文章")
+    @Test fun leftSwipeMovesToTrashAndUndoRestoresSharedAndExclusiveTags() {
+        val one = seed("要左滑的文章")
         val two = seed("保留的文章")
         val unique = runBlocking { container.tagRepository.ensureTag("独有标签")!! }
         val shared = runBlocking { container.tagRepository.ensureTag("共用标签")!! }
@@ -65,11 +65,11 @@ class SwipeDeleteRegressionTest {
             container.tagRepository.attachTag(two, shared)
         }
         ready(one)
-        evidence("01-before-right-swipe")
-        row(one).performTouchInput { swipeRight() }
+        evidence("01-before-left-swipe")
+        row(one).performTouchInput { swipeLeft() }
         compose.waitUntil(10000) { runBlocking { repo.findById(one)?.deletedAt != null } }
         compose.waitUntil(10000) { compose.onAllNodesWithText("独有标签").fetchSemanticsNodes().isEmpty() }
-        evidence("02-after-right-swipe-trash-with-undo")
+        evidence("02-after-left-swipe-trash-with-undo")
         assertEquals(setOf(unique, shared), runBlocking { container.database.tagDao().tagIdsForNote(one).toSet() })
         compose.onNodeWithText(compose.activity.getString(R.string.note_list_undo)).performClick()
         ready(one)
@@ -78,12 +78,12 @@ class SwipeDeleteRegressionTest {
         assertEquals(listOf(shared), runBlocking { container.database.tagDao().tagIdsForNote(two) })
         assertEquals(setOf(unique, shared), runBlocking { container.database.tagDao().tagIdsForNote(one).toSet() })
     }
-    @Test fun leftShortAndVerticalGesturesDoNotDeleteAndTapStillOpens() {
+    @Test fun rightShortAndVerticalGesturesDoNotDeleteAndTapStillOpens() {
         val id = seed("不能误删的文章")
         ready(id)
-        row(id).performTouchInput { swipeLeft() }
+        row(id).performTouchInput { swipeRight() }
         assertGestureKeptList(id)
-        row(id).performTouchInput { swipe(Offset(width * .15f, centerY), Offset(width * .25f, centerY), 700) }
+        row(id).performTouchInput { swipe(Offset(width * .85f, centerY), Offset(width * .75f, centerY), 700) }
         assertGestureKeptList(id)
         row(id).performTouchInput { swipeUp() }
         assertGestureKeptList(id)
@@ -99,20 +99,22 @@ class SwipeDeleteRegressionTest {
         compose.waitUntil(10000) {
             compose.onAllNodesWithTag(NoteListTags.TRASH).fetchSemanticsNodes().isEmpty()
         }
-        row(id).performTouchInput { swipeRight() }
+        row(id).performTouchInput { swipeLeft() }
         compose.waitForIdle()
         assertNotNull(runBlocking { repo.findById(id) })
         assertNull("A disabled swipe must not soft-delete", runBlocking { repo.findById(id)!!.deletedAt })
         evidence("05-after-disabled-swipe")
         android.util.Log.i("SwipeRegression", compose.onRoot().printToString())
         assertGestureKeptList(id)
-        row(id).performTouchInput { swipeLeft() }
+        row(id).performTouchInput { swipeRight() }
         assertGestureKeptList(id)
-        row(id).performTouchInput { swipe(Offset(width * .15f, centerY), Offset(width * .25f, centerY), 700) }
+        row(id).performTouchInput { swipe(Offset(width * .85f, centerY), Offset(width * .75f, centerY), 700) }
         assertGestureKeptList(id)
         row(id).performTouchInput { swipeUp() }
         assertGestureKeptList(id)
         row(id).assertExists().performTouchInput { longClick() }
+        row(id).assertIsSelected()
+        row(id).performTouchInput { swipeLeft() }
         row(id).assertIsSelected()
         row(id).performTouchInput { swipeRight() }
         row(id).assertIsSelected()
@@ -135,7 +137,7 @@ class SwipeDeleteRegressionTest {
             container.tagRepository.attachTag(two, tag)
         }
         ready(one)
-        row(one).performTouchInput { swipeRight() }
+        row(one).performTouchInput { swipeLeft() }
         compose.waitUntil(10000) { runBlocking { repo.findById(one)?.deletedAt != null } }
         compose.onNodeWithTag(NoteListTags.TRASH).performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.trash_restore)).performClick()

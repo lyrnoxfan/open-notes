@@ -25,7 +25,7 @@ if ! grep -q "OK (2 tests)" build/ime-roundtrip.txt; then
   cat build/ime-roundtrip.txt
   result=1
 fi
-# Isolated real-pointer right-swipe/search tests; collect actual MainActivity views
+# Isolated real-pointer left-swipe/search tests; collect actual MainActivity views
 # before clearing this synthetic test install. FLAG_SECURE stays enabled.
 adb shell pm clear com.example.privatenotes >/dev/null
 adb shell am instrument -w -e class com.example.privatenotes.SwipeDeleteRegressionTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/swipe-search-regression.txt 2>&1
