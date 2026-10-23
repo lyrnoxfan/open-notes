@@ -516,9 +516,9 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
 }
 
 /**
- * A row that can be swiped right to move the note to the trash.
+ * A row that can be swiped left to move the note to the trash.
  *
- * `enableDismissFromEndToStart = false` keeps the gesture one-directional, so scrolling back and
+ * `enableDismissFromStartToEnd = false` keeps the gesture one-directional, so scrolling back and
  * forth cannot delete anything by accident. The row is passed in as content: the very same
  * composable renders without deletion when the trash is off or a selection is open.
  * That plain wrapper still consumes horizontal drags so they cannot become row clicks.
@@ -532,7 +532,7 @@ private fun SwipeableNoteRow(
 ) {
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.StartToEnd) {
+            if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
                 true
             } else {
@@ -544,8 +544,8 @@ private fun SwipeableNoteRow(
     SwipeToDismissBox(
         modifier = modifier,
         state = dismissState,
-        enableDismissFromStartToEnd = true,
-        enableDismissFromEndToStart = false,
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = true,
         backgroundContent = {
             Row(
                 modifier = Modifier
@@ -554,7 +554,7 @@ private fun SwipeableNoteRow(
                     .clip(MaterialTheme.shapes.large)
                     .background(MaterialTheme.colorScheme.tertiaryContainer)
                     .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.Start,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
