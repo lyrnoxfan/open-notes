@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -342,7 +344,13 @@ internal fun NoteListContent(
                                         content = row,
                                     )
                                 } else {
-                                    Box(modifier = itemModifier) {
+                                    // Without a drag recognizer, combinedClickable can accept a
+                                    // horizontal move that stays inside the row as a tap.
+                                    // Consume drags even when deletion is unavailable, without
+                                    // intercepting taps, long presses or vertical list scrolling.
+                                    Box(modifier = itemModifier.pointerInput(Unit) {
+                                        detectHorizontalDragGestures { change, _ -> change.consume() }
+                                    }) {
                                         row()
                                     }
                                 }
@@ -512,8 +520,8 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
  *
  * `enableDismissFromEndToStart = false` keeps the gesture one-directional, so scrolling back and
  * forth cannot delete anything by accident. The row is passed in as content: the very same
- * composable renders plain when the trash is off or a selection is open and the swipe must not
- * exist.
+ * composable renders without deletion when the trash is off or a selection is open.
+ * That plain wrapper still consumes horizontal drags so they cannot become row clicks.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -34,6 +34,13 @@ class SwipeDeleteRegressionTest {
     private fun ready(id: String) {
         compose.waitUntil(10000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
     }
+    private fun assertGestureKeptList(id: String) {
+        compose.waitForIdle()
+        compose.onNodeWithTag(EditorTags.CONTENT).assertDoesNotExist()
+        row(id).assertExists()
+        assertNotNull(runBlocking { repo.findById(id) })
+        assertNull(runBlocking { repo.findById(id)!!.deletedAt })
+    }
     private fun evidence(name: String) {
         compose.waitForIdle()
         compose.activityRule.scenario.onActivity { activity ->
@@ -75,10 +82,11 @@ class SwipeDeleteRegressionTest {
         val id = seed("不能误删的文章")
         ready(id)
         row(id).performTouchInput { swipeLeft() }
+        assertGestureKeptList(id)
         row(id).performTouchInput { swipe(Offset(width * .15f, centerY), Offset(width * .25f, centerY), 700) }
+        assertGestureKeptList(id)
         row(id).performTouchInput { swipeUp() }
-        compose.waitForIdle()
-        assertNull(runBlocking { repo.findById(id)!!.deletedAt })
+        assertGestureKeptList(id)
         row(id).performClick()
         compose.onNodeWithTag(EditorTags.CONTENT).assertExists()
     }
@@ -97,12 +105,25 @@ class SwipeDeleteRegressionTest {
         assertNull("A disabled swipe must not soft-delete", runBlocking { repo.findById(id)!!.deletedAt })
         evidence("05-after-disabled-swipe")
         android.util.Log.i("SwipeRegression", compose.onRoot().printToString())
-        compose.onNodeWithTag(EditorTags.CONTENT).assertDoesNotExist()
+        assertGestureKeptList(id)
+        row(id).performTouchInput { swipeLeft() }
+        assertGestureKeptList(id)
+        row(id).performTouchInput { swipe(Offset(width * .15f, centerY), Offset(width * .25f, centerY), 700) }
+        assertGestureKeptList(id)
+        row(id).performTouchInput { swipeUp() }
+        assertGestureKeptList(id)
         row(id).assertExists().performTouchInput { longClick() }
+        row(id).assertIsSelected()
+        row(id).performTouchInput { swipeRight() }
+        row(id).assertIsSelected()
+        assertGestureKeptList(id)
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.note_list_delete_selected)).performClick()
         compose.onNodeWithText(compose.activity.getString(R.string.dialog_cancel)).performClick()
         assertNotNull(runBlocking { repo.findById(id) })
         assertNull(runBlocking { repo.findById(id)!!.deletedAt })
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.note_list_exit_selection)).performClick()
+        row(id).performTouchInput { click() }
+        compose.onNodeWithTag(EditorTags.CONTENT).assertExists()
         container.noteSettings.setTrashEnabled(true)
     }
     @Test fun trashRestoreAndConfirmedPermanentDeletePreserveSharedTag() {

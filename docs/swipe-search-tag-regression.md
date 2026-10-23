@@ -30,3 +30,20 @@ checks undo, trash restore, cancel/confirm permanent delete, shared tag survival
 Its PNGs are actual app-view captures with seeded test notes, not component previews or user
 notes. FLAG_SECURE is unchanged; app-view captures omit system windows.
 Existing API26/API35 long-document tests still run at default size and 320dp/2x fonts.
+
+## Disabled swipe must not become a click
+
+The original `27c2b33` device run failed on both API26 and API35 after a right drag with
+trash disabled. The diagnostic `c7feb45` waited for the trash entry to disappear and proved
+that the note still existed and was not soft-deleted, but `editor_content` was present.
+Actual app-view captures show that same seeded note open in the editor.
+
+In this mode the row had no horizontal drag recognizer: the dismiss wrapper was omitted,
+leaving `combinedClickable` on a wide row. A horizontal move remaining within the clickable
+bounds could therefore finish as a click. The plain wrapper now consumes horizontal drags
+after touch slop, even when deletion is unavailable, while the list retains vertical scrolling
+and the row retains click and long-click handling. Regression assertions cover no unintended
+navigation after right/left/short/vertical gestures, with real tap and long press still usable.
+
+The unchanged no-editor assertion failed on the preceding implementation. Final device
+results for this fix are recorded below only after the corresponding CI completes.
