@@ -61,7 +61,9 @@ class NoteListSearchDebounceTest {
         }
         advanceTimeBy(NoteListViewModel.SEARCH_DEBOUNCE_MILLIS + 50)
 
-        assertEquals("one query per settled search, not one per keystroke", 2, counter.calls)
+        // One unfiltered subscription supplies the tag catalog, one supplies initial rows,
+        // and the four keystrokes must still add exactly one settled search query.
+        assertEquals("catalog + initial rows + one settled search, not per-keystroke", 3, counter.calls)
         job.cancel()
     }
 

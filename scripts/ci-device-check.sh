@@ -25,6 +25,16 @@ if ! grep -q "OK (2 tests)" build/ime-roundtrip.txt; then
   cat build/ime-roundtrip.txt
   result=1
 fi
+# Isolated real-pointer right-swipe/search tests; collect actual MainActivity views
+# before clearing this synthetic test install. FLAG_SECURE stays enabled.
+adb shell pm clear com.example.privatenotes >/dev/null
+adb shell am instrument -w -e class com.example.privatenotes.SwipeDeleteRegressionTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/swipe-search-regression.txt 2>&1
+cat build/swipe-search-regression.txt
+if ! grep -q "OK (5 tests)" build/swipe-search-regression.txt; then result=1; fi
+mkdir -p build/swipe-evidence
+for file in $(adb shell run-as com.example.privatenotes ls files/swipe-evidence 2>/dev/null | tr -d '\r'); do
+  adb exec-out run-as com.example.privatenotes cat "files/swipe-evidence/$file" > "build/swipe-evidence/$file"
+done
 # Long documents must be exercised through actual scroll, tap and keyboard interaction.
 adb shell pm clear com.example.privatenotes >/dev/null
 adb shell settings put secure show_ime_with_hard_keyboard 1
