@@ -20,7 +20,8 @@ filter), and the shared-tag preservation test passed.
   selected tag. Clear a selection only if no active note uses that tag.
 - Soft deletion keeps note-tag joins for restore; permanent deletion's existing foreign-key
   cascade removes only that note's joins. Other notes' shared labels and global tag records
-  are not automatically destroyed. No database/security/IME/editor changes.
+  are not automatically destroyed. The UI/tag fix does not alter deletion schema, security, IME
+  or editor behavior; the later connection-lifecycle follow-up is described below.
 
 ## Verification
 
@@ -47,3 +48,40 @@ navigation after right/left/short/vertical gestures, with real tap and long pres
 
 The unchanged no-editor assertion failed on the preceding implementation. Final device
 results for this fix are recorded below only after the corresponding CI completes.
+
+## Transaction retirement and SQLCipher locks
+
+The first gesture-fixed build (`45c21eb`) passed the isolated gesture/search tests on both
+APIs and the API35 suite, but API26's five auto-save tests then hit SQLite database locks.
+The logs indicated a connection still in use while its pool was closing.
+
+The retired-helper check was executed for every writable/readable getter. Room also calls
+that getter to finish an already-started transaction. Retirement between begin and end could
+therefore throw during transaction cleanup, stranding a native write lock. The added
+`retiringDuringATransactionLetsItFinishButRefusesNewAccess` regression is submitted separately
+in `9d444b3` against the unchanged provider as a device-level control. CI `39883192725`
+failed that regression on API26 with `IllegalStateException: test connection retired` from
+`EncryptedDatabaseProvider.getWritableDatabase` through Room `internalEndTransaction`.
+This directly verifies the cleanup failure; it does not prove every historical lock had this cause.
+
+The proposed lifecycle fix caches only a connection the helper has already opened. A thread
+already inside a transaction may reuse that live connection to finish; it never calls the
+SQLCipher opener on that path. SQLCipher 4.12's `inTransaction()` reads its thread session,
+so another thread cannot acquire this exception. All non-transactional or closed-handle
+access still executes the original retirement/app-lock guard before opening. Additional
+coverage checks cross-thread refusal, post-transaction refusal, persistence and a fresh write
+through a distinct connection. Existing retired-DAO and app-lock tests remain unchanged.
+
+Room also calls `inTransaction()` after ending a transaction. AppDatabase now answers that
+state-only query from the provider's already-open connection, without opening or querying SQL.
+This prevents a second retirement exception after the native transaction has finished.
+
+Device results are pending; this section does not claim final validation or main integration.
+
+The helper's close path also waits for transactions already begun on its connection. A shared
+read lock spans each native begin/end pair; asynchronous close takes the write lock, so the
+native pool is not torn down underneath a transaction. Retirement is still marked before
+close, and new transaction starts recheck the guard. A separate device regression starts
+actual close on another thread during a retired transaction, verifies it waits, then verifies
+close completes and a new connection can persist writes. This closes the pool-shutdown race,
+not just the helper-getter cleanup failure.

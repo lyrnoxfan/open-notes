@@ -18,6 +18,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.TimeUnit
 
 /**
  * The encryption contract, verified against real SQLCipher.
@@ -185,6 +189,73 @@ class EncryptedDatabaseTest {
             // A distinct connection must be able to write after the retired one closes.
             insertNote(reopened, "No leaked transaction lock")
             assertEquals(1, runBlocking { reopened.noteDao().countActive() })
+        }
+    }
+
+    @Test
+    fun retiringATransactionDoesNotGrantAnotherThreadAccess() = runBlocking {
+        var retired = false
+        val database = EncryptedDatabaseProvider.openWithPassphrase(
+            context, passphrase, TEST_DATABASE,
+            onOpenCheck = { check(!retired) { "test connection retired" } },
+        )
+        val otherThread = Executors.newSingleThreadExecutor()
+        try {
+            database.withTransaction {
+                database.openHelper.writableDatabase.execSQL(
+                    "INSERT INTO tags (id, name, createdAt, updatedAt) VALUES ('thread', 'thread', 1, 1)",
+                )
+                retired = true
+                assertTrue("An active transaction must not authorize another thread", otherThread.submit<Boolean> {
+                    runCatching { database.openHelper.writableDatabase }.exceptionOrNull() is IllegalStateException
+                }.get(5, TimeUnit.SECONDS))
+            }
+            assertThrows(IllegalStateException::class.java) { database.openHelper.writableDatabase }
+        } finally {
+            otherThread.shutdownNow()
+            database.close()
+        }
+        withDatabase { reopened ->
+            assertEquals("thread", runBlocking { reopened.tagDao().findById("thread") }!!.name)
+            insertNote(reopened, "Transaction lock was released")
+        }
+    }
+
+    @Test
+    fun retirementCloseWaitsForTheNativeTransactionToFinish() = runBlocking {
+        var retired = false
+        val database = EncryptedDatabaseProvider.openWithPassphrase(
+            context, passphrase, TEST_DATABASE,
+            onOpenCheck = { check(!retired) { "test connection retired" } },
+        )
+        val closer = Executors.newSingleThreadExecutor()
+        val closeStarted = CountDownLatch(1)
+        var close: java.util.concurrent.Future<*>? = null
+        try {
+            database.withTransaction {
+                database.openHelper.writableDatabase.execSQL(
+                    "INSERT INTO tags (id, name, createdAt, updatedAt) VALUES ('close', 'close', 1, 1)",
+                )
+                retired = true
+                close = closer.submit {
+                    closeStarted.countDown()
+                    database.close()
+                }
+                assertTrue(closeStarted.await(5, TimeUnit.SECONDS))
+                assertThrows("Close must wait for the active transaction", TimeoutException::class.java) {
+                    close!!.get(200, TimeUnit.MILLISECONDS)
+                }
+            }
+            close!!.get(5, TimeUnit.SECONDS)
+            assertFalse(database.isOpen)
+            assertThrows(IllegalStateException::class.java) { database.openHelper.writableDatabase }
+        } finally {
+            closer.shutdownNow()
+            database.close()
+        }
+        withDatabase { reopened ->
+            assertEquals("close", runBlocking { reopened.tagDao().findById("close") }!!.name)
+            insertNote(reopened, "Write after actual asynchronous close")
         }
     }
 
