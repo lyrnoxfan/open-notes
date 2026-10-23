@@ -51,7 +51,7 @@ class NoteListSearchDebounceTest {
     @Test
     fun fourKeystrokesProduceOneQuery() = runTest(dispatcher) {
         val counter = CountingRepository()
-        val viewModel = NoteListViewModel({ counter }, { NoTags }, FakeNoteSettings())
+        val viewModel = NoteListViewModel({ counter }, FakeNoteSettings())
         val job = TestScope(dispatcher).launch { viewModel.uiState.collect {} }
         advanceTimeBy(1)
 
@@ -68,7 +68,7 @@ class NoteListSearchDebounceTest {
     @Test
     fun clearingTheBoxIsImmediate() = runTest(dispatcher) {
         val counter = CountingRepository()
-        val viewModel = NoteListViewModel({ counter }, { NoTags }, FakeNoteSettings())
+        val viewModel = NoteListViewModel({ counter }, FakeNoteSettings())
         val job = TestScope(dispatcher).launch { viewModel.uiState.collect {} }
         advanceTimeBy(1)
         val beforeClear = counter.calls

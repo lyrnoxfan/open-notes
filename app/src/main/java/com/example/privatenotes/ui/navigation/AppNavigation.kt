@@ -56,7 +56,6 @@ fun AppNavigation(container: AppContainer) {
             val listViewModel: NoteListViewModel = viewModel(
                 factory = NoteListViewModel.factory(
                     repositoryProvider = { container.noteRepository },
-                    tagRepositoryProvider = { container.tagRepository },
                     noteSettings = container.noteSettings,
                 ),
             )

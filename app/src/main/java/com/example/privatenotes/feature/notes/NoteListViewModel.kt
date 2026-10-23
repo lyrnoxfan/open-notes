@@ -9,7 +9,6 @@ import com.example.privatenotes.data.NoteSettings
 import com.example.privatenotes.data.local.NoteWithTags
 import com.example.privatenotes.data.local.TagEntity
 import com.example.privatenotes.data.repository.NoteRepository
-import com.example.privatenotes.data.repository.TagRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +17,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -55,7 +53,6 @@ data class NoteListUiState(
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class NoteListViewModel(
     private val repositoryProvider: () -> NoteRepository,
-    private val tagRepositoryProvider: () -> TagRepository,
     private val noteSettings: NoteSettings,
 ) : ViewModel() {
 
@@ -72,10 +69,6 @@ class NoteListViewModel(
         .debounce { (term, _) -> if (term.isEmpty()) 0L else SEARCH_DEBOUNCE_MILLIS }
         .flatMapLatest { (term, tagId) -> repositoryProvider().observeNotes(term, tagId) }
 
-    // Deferred to collection time so a database that cannot be opened surfaces as an error
-    // state instead of a crash during construction.
-    private val tags = flow { emitAll(tagRepositoryProvider().observeAll()) }
-
     private data class ListData(
         val notes: List<NoteWithTags>,
         val tags: List<TagEntity>,
@@ -83,8 +76,11 @@ class NoteListViewModel(
         val tagId: String?,
     )
 
-    private val listData = combine(results, tags, query, selectedTagId) { notes, allTags, term, tagId ->
-        ListData(notes, allTags, term, tagId)
+    private val listData = combine(results, query, selectedTagId) { notes, term, tagId ->
+        // Tags are derived from the visible (non-deleted) notes, not from the tag table.
+        // Deleting a note drops its orphaned tags from the filter automatically.
+        val usedTags = notes.flatMap { it.tags }.distinctBy { it.id }.sortedBy { it.name }
+        ListData(notes, usedTags, term, tagId)
     }
 
     val uiState: StateFlow<NoteListUiState> =
@@ -202,10 +198,9 @@ class NoteListViewModel(
 
         fun factory(
             repositoryProvider: () -> NoteRepository,
-            tagRepositoryProvider: () -> TagRepository,
             noteSettings: NoteSettings,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NoteListViewModel(repositoryProvider, tagRepositoryProvider, noteSettings) }
+            initializer { NoteListViewModel(repositoryProvider, noteSettings) }
         }
     }
 }
