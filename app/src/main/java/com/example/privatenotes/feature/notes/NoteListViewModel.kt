@@ -18,6 +18,9 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -76,11 +79,20 @@ class NoteListViewModel(
         val tagId: String?,
     )
 
-    private val listData = combine(results, query, selectedTagId) { notes, term, tagId ->
-        // Tags are derived from the visible (non-deleted) notes, not from the tag table.
-        // Deleting a note drops its orphaned tags from the filter automatically.
-        val usedTags = notes.flatMap { it.tags }.distinctBy { it.id }.sortedBy { it.name }
-        ListData(notes, usedTags, term, tagId)
+    // The catalog must not depend on the search/tag-filtered result. Otherwise searching
+    // hides unrelated filters, and deleting the last result traps the UI in a dead tag.
+    // Deleted notes keep their joins for undo/restore, but do not contribute list filters.
+    private val availableTags = flow {
+        emitAll(repositoryProvider().observeNotes("", null))
+    }.map { notes ->
+        notes.flatMap { it.tags }.distinctBy { it.id }.sortedBy { it.name }
+    }.onEach { tags ->
+        val selected = selectedTagId.value
+        if (selected != null && tags.none { it.id == selected }) selectedTagId.value = null
+    }
+
+    private val listData = combine(results, availableTags, query, selectedTagId) { notes, tags, term, tagId ->
+        ListData(notes, tags, term, tagId)
     }
 
     val uiState: StateFlow<NoteListUiState> =

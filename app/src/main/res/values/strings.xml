@@ -20,7 +20,7 @@
     <string name="note_list_batch_confirm_title">永久删除 %1$d 篇笔记？</string>
     <string name="note_list_batch_confirm_body">回收站已关闭，删除后无法恢复。</string>
 
-    <string name="note_list_search_hint">搜索标题或正文</string>
+    <string name="note_list_search_hint">搜索正文</string>
     <string name="note_list_clear_search">清除搜索</string>
     <string name="note_list_undo">撤销</string>
     <string name="note_list_moved_to_trash">已移入回收站</string>

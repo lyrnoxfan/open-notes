@@ -21,6 +21,11 @@ import androidx.room.RoomDatabase
 )
 abstract class AppDatabase : RoomDatabase() {
 
+    /** Installed by the encrypted provider; inspecting state must never reopen a retired handle. */
+    internal var transactionState: (() -> Boolean)? = null
+
+    override fun inTransaction(): Boolean = transactionState?.invoke() ?: super.inTransaction()
+
     abstract fun noteDao(): NoteDao
     abstract fun tagDao(): TagDao
     abstract fun deletionMarkerDao(): DeletionMarkerDao
