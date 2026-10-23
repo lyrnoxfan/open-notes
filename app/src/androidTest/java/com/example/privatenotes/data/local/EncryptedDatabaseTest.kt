@@ -1,6 +1,7 @@
 package com.example.privatenotes.data.local
 
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.privatenotes.security.DatabaseFileGuard
@@ -155,6 +156,35 @@ class EncryptedDatabaseTest {
             val notes = runBlocking { database.noteDao().observeActive().first() }
             assertEquals(2, notes.size)
             assertFalse(DatabaseFileGuard.isPlaintextSqlite(databaseFile))
+        }
+    }
+
+    @Test
+    fun retiringDuringATransactionLetsItFinishButRefusesNewAccess() = runBlocking {
+        var retired = false
+        val database = EncryptedDatabaseProvider.openWithPassphrase(
+            context, passphrase, TEST_DATABASE,
+            onOpenCheck = { check(!retired) { "test connection retired" } },
+        )
+        try {
+            // Room's endTransaction also asks openHelper.writableDatabase. Retirement must
+            // not strand that already-started native transaction (and its file write lock).
+            database.withTransaction {
+                database.openHelper.writableDatabase.execSQL(
+                    "INSERT INTO tags (id, name, createdAt, updatedAt) VALUES ('lease', 'lease', 1, 1)",
+                )
+                retired = true
+            }
+            assertThrows(IllegalStateException::class.java) {
+                database.openHelper.writableDatabase
+            }
+        } finally {
+            database.close()
+        }
+        withDatabase { reopened ->
+            // A distinct connection must be able to write after the retired one closes.
+            insertNote(reopened, "No leaked transaction lock")
+            assertEquals(1, runBlocking { reopened.noteDao().countActive() })
         }
     }
 
