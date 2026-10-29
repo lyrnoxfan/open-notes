@@ -19,6 +19,7 @@ data class BackupSnapshot(
     val tags: List<TagEntity>,
     val noteTags: List<NoteTagCrossRef>,
     val deletionMarkers: List<DeletionMarkerEntity>,
+    val media: Map<String, List<com.example.privatenotes.data.media.BackupMedia>> = emptyMap(),
 ) {
     fun toDocument(exportedAt: Long, appVersion: String): BackupDocument = BackupDocument(
         format = BackupDocument.FORMAT,
@@ -33,6 +34,7 @@ data class BackupSnapshot(
                 createdAt = it.createdAt,
                 updatedAt = it.updatedAt,
                 deletedAt = it.deletedAt,
+                media = media[it.id].orEmpty(),
             )
         },
         tags = tags.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }).map {
@@ -76,11 +78,19 @@ class BackupSnapshotReader(
         val database = databaseProvider()
         return database.withTransaction {
             val dao = database.backupDao()
+            val allMedia = database.mediaDao().all()
+            if (allMedia.any { it.size > com.example.privatenotes.data.media.MediaRules.LEGACY_MAX_BYTES } || allMedia.sumOf { it.size.toLong() } > 40L * 1024 * 1024) {
+                throw BackupException(BackupErrorKind.STORAGE, "请使用“大媒体加密备份”导出此媒体库；旧 JSON/PNB 容量不足，未生成不完整备份")
+            }
             val snapshot = BackupSnapshot(
                 notes = dao.allNotes(),
                 tags = dao.allTags(),
                 noteTags = dao.allNoteTags(),
                 deletionMarkers = dao.allDeletionMarkers(),
+                media = allMedia.groupBy { it.noteId }.mapValues { (_, list) ->
+                    list.map { com.example.privatenotes.data.media.MediaRules.encode(it,
+                        com.example.privatenotes.data.media.MediaRules.read(database.mediaDao(), it)) }
+                },
             )
             snapshot.toDocument(exportedAt = timeSource.nowMillis(), appVersion = appVersion)
         }

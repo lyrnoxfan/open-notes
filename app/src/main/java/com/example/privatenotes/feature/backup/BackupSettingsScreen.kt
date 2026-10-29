@@ -197,6 +197,7 @@ fun BackupSettingsScreen(
         actions = actions,
         snackbarHostState = snackbarHostState,
         lockRow = { AppLockSection(lock = appLock, authenticator = authenticator) },
+        streamingRow = { StreamingBackupSection(viewModel, appLock, state.busy) },
         onBack = onBack,
         modifier = modifier,
     )
@@ -210,6 +211,7 @@ internal fun SettingsContent(
     actions: SettingsActions,
     snackbarHostState: SnackbarHostState,
     lockRow: @Composable () -> Unit,
+    streamingRow: @Composable () -> Unit = {},
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -283,6 +285,8 @@ internal fun SettingsContent(
                     onRetentionChange = actions.onLocalRetentionChange,
                 )
             }
+
+            item { streamingRow() }
 
             item {
                 WebDavSection(
@@ -1255,4 +1259,45 @@ private const val LICENCE_ASSET = "licenses/lxgw-wenkai-OFL.txt"
 /** Stable handles for instrumented UI tests. */
 object SettingsTags {
     const val TAGS = "settings_tags"
+}
+
+/** Passwords stay in memory only and are zeroed on cancellation, completion or screen removal. */
+@Composable
+private fun StreamingBackupSection(viewModel: BackupSettingsViewModel, lock: AppLock, busy: Boolean) {
+    val resolver = LocalContext.current.applicationContext.contentResolver
+    var prompt by remember { mutableStateOf<Boolean?>(null) }
+    val pending = remember { arrayOfNulls<CharArray>(1) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { pending[0]?.fill('\u0000'); pending[0] = null }
+    }
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        lock.endSystemUi()
+        val password = pending[0]; pending[0] = null
+        if (uri != null && password != null) viewModel.streamingBackup(uri, resolver, password, false)
+        else password?.fill('\u0000')
+    }
+    val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        lock.endSystemUi()
+        val password = pending[0]; pending[0] = null
+        if (uri != null && password != null) viewModel.streamingBackup(uri, resolver, password, true)
+        else password?.fill('\u0000')
+    }
+    SettingsSection(title = "大媒体加密备份") {
+        Text("视频支持 256 MiB，单篇合计 512 MiB；此格式随备份携带媒体，总量最多 2 GiB。仅本地手动备份，不用于自动备份或 WebDAV；旧 JSON / PNB 仍使用上方原入口。请记住密码，旧版应用不能读取此格式。")
+        OutlinedButton(enabled = !busy, onClick = { prompt = false }, modifier = Modifier.testTag("stream_backup_export")) { Text("导出含媒体的加密备份") }
+        OutlinedButton(enabled = !busy, onClick = { prompt = true }, modifier = Modifier.testTag("stream_backup_restore")) { Text("恢复大媒体加密备份") }
+    }
+    prompt?.let { isRestore ->
+        PasswordPromptDialog(title = if (isRestore) "恢复大媒体备份" else "导出大媒体备份",
+            body = "密码至少 8 个字符；恢复会合并笔记。验证失败时整体回滚。", confirmLabel = "选择文件", onDismiss = { prompt = null },
+            onConfirm = { password ->
+                if (password.size < 8) password.fill('\u0000')
+                else {
+                    pending[0]?.fill('\u0000'); pending[0] = password
+                    prompt = null; lock.beginSystemUi()
+                    if (isRestore) restore.launch(arrayOf("*/*"))
+                    else export.launch("private-notes-media-${System.currentTimeMillis()}.pnm")
+                }
+            })
+    }
 }

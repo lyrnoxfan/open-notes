@@ -24,9 +24,9 @@ data class BackupDocument(
         const val FORMAT = "private-notes-backup"
 
         /** Version of the backup envelope, not of the Room schema. */
-        const val CURRENT_SCHEMA_VERSION = 1
+        const val CURRENT_SCHEMA_VERSION = 2
 
-        val SUPPORTED_SCHEMA_VERSIONS: Set<Int> = setOf(CURRENT_SCHEMA_VERSION)
+        val SUPPORTED_SCHEMA_VERSIONS: Set<Int> = setOf(1, CURRENT_SCHEMA_VERSION)
     }
 }
 
@@ -38,6 +38,7 @@ data class BackupNote(
     val createdAt: Long,
     val updatedAt: Long,
     val deletedAt: Long? = null,
+    val media: List<com.example.privatenotes.data.media.BackupMedia> = emptyList(),
 )
 
 @Serializable

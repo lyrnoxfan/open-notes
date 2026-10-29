@@ -207,37 +207,93 @@ class LongDocumentEditorTest {
         val result = layout()
         val start = document.indexOf("第%03d行".format(line))
         check(start >= 0)
+        val lineEnd = document.indexOf('\n', start).let { if (it < 0) document.length else it }
         val target = result.getCursorRect(start)
-        repeat(60) {
+        val viewportHeight = field().fetchSemanticsNode().boundsInRoot.height
+        // At 2x accessibility text and 320dp width, one logical document line can wrap into
+        // multiple visual lines. Bound physical drags from the actual rendered text extent rather
+        // than assuming 60 gestures always reach line 100 on every density/font configuration.
+        val swipeDistance = (viewportHeight * .8f).coerceAtLeast(1f)
+        val maxSwipes = ((result.size.height / swipeDistance).toInt() + 12).coerceIn(60, 1_000)
+        // Check once before the first drag and again after each drag, including the final allowed
+        // drag. A long wrapped logical line can enter the hit-test viewport on that last gesture.
+        for (swipeCount in 0..maxSwipes) {
             val bounds = field().fetchSemanticsNode().boundsInRoot
             val origin = textOriginInRoot()
-            val localY = origin.y + target.center.y - bounds.top
-            if (localY in 8f..(bounds.height - 8f)) {
-                Log.i("LongDocument", "BEFORE IME line=$line origin=$origin viewport=$bounds tapY=$localY")
+            // A logical line may wrap over several display lines at large font scales. Near
+            // document end, the first character's glyph can be just above the scroll limit even
+            // though later characters from that same logical line are visible. Pick a real
+            // visible glyph within the requested line; never teleport selection or tap blank
+            // space. The selection assertion below still proves the physical hit landed on line.
+            val visibleGlyph = (start until lineEnd).asSequence()
+                .mapNotNull { offset -> runCatching { offset to result.getBoundingBox(offset) }.getOrNull() }
+                .firstOrNull { (_, rect) ->
+                    val center = origin.y + rect.center.y - bounds.top
+                    center in 8f..(bounds.height - 8f) &&
+                        origin.x + rect.center.x in (bounds.left + 2f)..(bounds.right - 2f)
+                }
+            val localY = visibleGlyph?.let { origin.y + it.second.center.y - bounds.top }
+                ?: (origin.y + target.center.y - bounds.top)
+            if (visibleGlyph != null) {
+                val glyph = visibleGlyph.second
+                // Aim inside the observed glyph, not at the text layout's leading edge; on API35
+                // a glyph at x=0 may not receive a physical hit if the pointer falls on its edge.
+                val localX = origin.x + glyph.left + (glyph.width * .5f).coerceAtLeast(1f) - bounds.left
+                Log.i("LongDocument", "BEFORE IME line=$line offset=${visibleGlyph.first} origin=$origin viewport=$bounds tap=($localX,$localY) glyph=$glyph")
                 val frames = watchFirstImeFrames(line, target, bounds.top)
-                field().performTouchInput { click(Offset(target.left + 1f, localY)) }
+                field().performTouchInput { click(Offset(localX, localY)) }
                 waitForKeyboard(true)
                 Thread.sleep(1_000)
                 assertTrue("IME opening must not flash the document top for offscreen line $line: $frames",
                     line <= 5 || frames.none { it >= bounds.top - 2f })
+                val actual = selection().start
+                assertTrue("physical tap must place the caret on line $line; expected $start..$lineEnd, got $actual",
+                    actual in start..lineEnd)
                 Log.i("LongDocument", "AFTER IME line=$line origin=${textOriginInRoot()} viewport=${field().fetchSemanticsNode().boundsInRoot}")
-                Log.i("LongDocument", "tap line=$line expected=$start actual=${selection()} localY=$localY")
-                return start
+                Log.i("LongDocument", "tap line=$line expected=$start..$lineEnd actual=${selection()} local=($localX,$localY)")
+                return actual
             }
+            if (swipeCount == maxSwipes) break
             field().performTouchInput {
                 if (localY >= bounds.height - 8f) {
-                    swipeWithVelocity(Offset(width * .8f, height * .8f), Offset(width * .8f, height * .25f), 0f, 500)
+                    swipeWithVelocity(Offset(width * .8f, height * .9f), Offset(width * .8f, height * .1f), 0f, 500)
                 } else {
-                    swipeWithVelocity(Offset(width * .8f, height * .25f), Offset(width * .8f, height * .8f), 0f, 500)
+                    swipeWithVelocity(Offset(width * .8f, height * .1f), Offset(width * .8f, height * .9f), 0f, 500)
                 }
             }
             compose.waitForIdle()
         }
-        error("Could not reach line $line by scrolling")
+        val finalBounds = field().fetchSemanticsNode().boundsInRoot
+        val finalOrigin = textOriginInRoot()
+        val finalCandidates = (start until lineEnd).mapNotNull { offset ->
+            runCatching { offset to result.getBoundingBox(offset) }.getOrNull()
+        }.map { (offset, rect) ->
+            val rootCenter = finalOrigin + rect.center
+            val viewportCenter = rootCenter - finalBounds.topLeft
+            val insideX = rootCenter.x in (finalBounds.left + 2f)..(finalBounds.right - 2f)
+            val insideY = viewportCenter.y in 8f..(finalBounds.height - 8f)
+            "$offset:$rect@root=$rootCenter@local=$viewportCenter(x=$insideX,y=$insideY)"
+        }
+        error(
+            "Could not reach line $line after $maxSwipes physical drags; " +
+                "documentHeight=${result.size.height}px viewportHeight=$viewportHeight px " +
+                "finalOrigin=$finalOrigin finalTargetY=${finalOrigin.y + target.center.y} " +
+                "candidates=${finalCandidates.joinToString()} finalBounds=$finalBounds",
+        )
     }
 
     private fun hideKeyboard() {
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        // Espresso.closeSoftKeyboard() requires Espresso's selected root to own window focus.
+        // On API 35 the real activity can temporarily report no focus after the isolated device
+        // checks even though the test activity is alive; ask the activity's IME controller instead.
+        compose.activityRule.scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            val insets = androidx.core.view.ViewCompat.getRootWindowInsets(decor)
+            if (insets?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true) {
+                androidx.core.view.WindowInsetsControllerCompat(activity.window, decor)
+                    .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+            }
+        }
         waitForKeyboard(false)
     }
 

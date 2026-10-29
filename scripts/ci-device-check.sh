@@ -35,6 +35,11 @@ mkdir -p build/swipe-evidence
 for file in $(adb shell run-as com.example.privatenotes ls files/swipe-evidence 2>/dev/null | tr -d '\r'); do
   adb exec-out run-as com.example.privatenotes cat "files/swipe-evidence/$file" > "build/swipe-evidence/$file"
 done
+# Isolated media storage, encrypted restore, real image decode and in-memory video playback.
+adb shell pm clear com.example.privatenotes >/dev/null
+adb shell am instrument -w -e class com.example.privatenotes.MediaDeviceTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/media-device.txt 2>&1
+cat build/media-device.txt
+if ! grep -q "OK (3 tests)" build/media-device.txt; then result=1; fi
 # Long documents must be exercised through actual scroll, tap and keyboard interaction.
 adb shell pm clear com.example.privatenotes >/dev/null
 adb shell settings put secure show_ime_with_hard_keyboard 1

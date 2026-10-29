@@ -62,6 +62,9 @@ data class NoteEditorUiState(
     val pendingTags: List<String> = emptyList(),
     /** Off means the delete action below removes the note outright and must confirm first. */
     val trashEnabled: Boolean = true,
+    val media: List<com.example.privatenotes.data.media.NoteMediaEntity> = emptyList(),
+    val mediaBusy: Boolean = false,
+    val mediaError: String? = null,
 ) {
     val tags: List<EditorTag>
         get() = persistedTags.map { EditorTag(it.id, it.name) } +
@@ -97,6 +100,7 @@ class NoteEditorViewModel(
      * the tests for it must not acquire one either.
      */
     private val onPersisted: () -> Unit = {},
+    private val mediaRepository: com.example.privatenotes.data.media.MediaRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -154,6 +158,67 @@ class NoteEditorViewModel(
             }
         }
     }
+
+    init {
+        viewModelScope.launch {
+            _uiState.map { it.noteId }.distinctUntilChanged().collect { id ->
+                if (id != null) refreshMedia(id)
+            }
+        }
+    }
+
+    private suspend fun refreshMedia(id: String) {
+        try { _uiState.update { it.copy(media = mediaRepository?.list(id).orEmpty()) } }
+        catch (c: CancellationException) { throw c }
+        catch (_: Exception) { _uiState.update { it.copy(mediaError = "无法读取附件") } }
+    }
+
+    fun importMedia(uri: android.net.Uri, video: Boolean) {
+        val mediaRepo = mediaRepository ?: return
+        if (_uiState.value.mediaBusy || deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
+        _uiState.update { it.copy(mediaBusy = true, mediaError = null) }
+        viewModelScope.launch {
+            try {
+                mutex.withLock {
+                    check(!deleted && !deleting) { "笔记已删除" }
+                    var id = noteId
+                    if (id == null) {
+                        id = repository.createNote(_uiState.value.title, _uiState.value.content)
+                        noteId = id
+                        _uiState.update { it.copy(noteId = id) }
+                        attachPendingTags(id)
+                    }
+                    mediaRepo.importStream(id, uri, video)
+                    refreshMedia(id)
+                    runCatching { onPersisted() }
+                }
+            } catch (c: CancellationException) { throw c }
+            catch (e: Exception) { _uiState.update { it.copy(mediaError = e.message ?: "附件导入失败") } }
+            finally { _uiState.update { it.copy(mediaBusy = false) } }
+        }
+    }
+
+    fun removeMedia(media: com.example.privatenotes.data.media.NoteMediaEntity) {
+        val repo = mediaRepository ?: return
+        if (_uiState.value.mediaBusy || deleted || deleting) return
+        viewModelScope.launch {
+            try {
+                mutex.withLock {
+                    check(!deleted && !deleting) { "笔记已删除" }
+                    repo.remove(media.noteId, media.id)
+                    refreshMedia(media.noteId)
+                    runCatching { onPersisted() }
+                }
+            } catch (c: CancellationException) { throw c }
+            catch (e: Exception) { _uiState.update { it.copy(mediaError = e.message ?: "附件移除失败") } }
+        }
+    }
+
+    suspend fun mediaVideoSource(media: com.example.privatenotes.data.media.NoteMediaEntity): android.media.MediaDataSource =
+        checkNotNull(mediaRepository).videoSource(media)
+
+    suspend fun mediaBytes(media: com.example.privatenotes.data.media.NoteMediaEntity): ByteArray =
+        checkNotNull(mediaRepository).bytes(media)
 
     fun togglePreview() {
         _uiState.update { it.copy(isPreview = !it.isPreview) }
@@ -328,6 +393,7 @@ class NoteEditorViewModel(
             timeSource: TimeSource,
             externalScope: CoroutineScope,
             onPersisted: () -> Unit = {},
+            mediaRepository: com.example.privatenotes.data.media.MediaRepository? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 NoteEditorViewModel(
@@ -338,6 +404,7 @@ class NoteEditorViewModel(
                     timeSource = timeSource,
                     externalScope = externalScope,
                     onPersisted = onPersisted,
+                    mediaRepository = mediaRepository,
                 )
             }
         }

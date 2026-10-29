@@ -113,6 +113,9 @@ class AppContainer(context: Context) {
         }
     }
 
+    val mediaRepository: com.example.privatenotes.data.media.MediaRepository
+        get() = com.example.privatenotes.data.media.MediaRepository(database, appContext, timeSource)
+
     val noteRepository: NoteRepository
         get() = RoomNoteRepository(database, timeSource)
 
@@ -165,6 +168,7 @@ class AppContainer(context: Context) {
 
     // ---------------------------------------------------------------- backups
 
+    val appVersionName: String get() = appVersionProvider.versionName()
     private val appVersionProvider: AppVersionProvider by lazy { AppVersionProvider(appContext) }
 
     private val backupJson: BackupJson by lazy { BackupJson() }

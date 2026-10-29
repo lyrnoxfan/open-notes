@@ -16,7 +16,9 @@ import com.example.privatenotes.feature.notes.NoteListTags
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,6 +51,22 @@ class CanarySeedTest {
         composeRule.onNodeWithTag(EditorTags.TITLE).performTextInput(CANARY_TITLE)
         composeRule.onNodeWithTag(EditorTags.CONTENT).performTextInput(CANARY_BODY)
 
+        // Header actions intentionally collapse while the body IME is visible so large-font
+        // writing retains a usable viewport. Dismiss it before exercising the tag action.
+        composeRule.activityRule.scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            androidx.core.view.WindowInsetsControllerCompat(activity.window, decor)
+                .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+        }
+        composeRule.waitUntil(10_000) {
+            var visible = false
+            composeRule.activityRule.scenario.onActivity { activity ->
+                visible = androidx.core.view.ViewCompat.getRootWindowInsets(activity.window.decorView)
+                    ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            }
+            !visible
+        }
+        composeRule.waitForIdle()
         // By text, not by tag: EditorTags.ADD_TAG is declared but no longer applied to the pill
         // that replaced the AssistChip (recorded in docs/test-report.md as a defect).
         composeRule.onNode(hasText("添加标签")).performClick()
@@ -67,8 +85,14 @@ class CanarySeedTest {
         }
         assertEquals("the canary note must exist", CANARY_TITLE, note?.title)
         assertEquals(CANARY_BODY, note?.content)
-        val tags = runBlocking { app.container.tagRepository.observeAll().first() }
-        assertEquals(true, tags.any { it.name == CANARY_TAG })
+        // If the editor already auto-saved before the tag was entered, addTag persists it in
+        // its own coroutine. Wait for that real database write instead of racing the first query.
+        val tags = runBlocking {
+            withTimeout(10_000) {
+                app.container.tagRepository.observeAll().first { all -> all.any { it.name == CANARY_TAG } }
+            }
+        }
+        assertTrue(tags.any { it.name == CANARY_TAG })
 
         // 2. The WebDAV password, stored through the same path the settings screen uses.
         app.container.backupStatusStore.saveWebDav(

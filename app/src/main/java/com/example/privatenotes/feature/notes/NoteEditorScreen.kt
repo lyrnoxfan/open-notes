@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -60,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -95,8 +98,19 @@ fun NoteEditorScreen(
     viewModel: NoteEditorViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    appLock: com.example.privatenotes.security.AppLock? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        appLock?.endSystemUi()
+        uri?.let { viewModel.importMedia(it, false) }
+    }
+    val videoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        appLock?.endSystemUi()
+        uri?.let { viewModel.importMedia(it, true) }
+    }
     LaunchedEffect(state.isDeleted) {
         if (state.isDeleted) onBack()
     }
@@ -111,6 +125,18 @@ fun NoteEditorScreen(
         onRemoveTag = viewModel::removeTag,
         onBack = onBack,
         onFlush = viewModel::flushInBackground,
+        mediaContent = { MediaAttachments(state,
+            onImage = {
+                appLock?.beginSystemUi()
+                try { imagePicker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "image/gif")) }
+                catch (_: Exception) { appLock?.endSystemUi() }
+            },
+            onVideo = {
+                appLock?.beginSystemUi()
+                try { videoPicker.launch(arrayOf("video/mp4", "video/webm", "video/3gpp")) }
+                catch (_: Exception) { appLock?.endSystemUi() }
+            },
+            onRemove = viewModel::removeMedia, read = viewModel::mediaBytes, videoSource = viewModel::mediaVideoSource) },
         modifier = modifier,
     )
 }
@@ -132,6 +158,7 @@ internal fun EditorContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onFlush: () -> Unit = {},
+    mediaContent: @Composable () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
@@ -223,6 +250,13 @@ internal fun EditorContent(
             },
         )
     }
+
+    // At large accessibility font scales, the title, tag editor and media actions can consume
+    // the entire resized window when the IME opens. Keep the active writing surface measurable:
+    // these secondary controls return as soon as the keyboard is dismissed.
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var bodyFocused by remember { mutableStateOf(false) }
+    val bodyImeVisible = imeVisible && bodyFocused
 
     Scaffold(
         modifier = modifier,
@@ -319,16 +353,20 @@ internal fun EditorContent(
                     .fillMaxSize()
                     .padding(horizontal = 24.dp),
             ) {
-                EditorTitle(
-                    title = state.title,
-                    onTitleChange = onTitleChange,
-                )
+                if (!bodyImeVisible) {
+                    EditorTitle(
+                        title = state.title,
+                        onTitleChange = onTitleChange,
+                    )
 
-                TagEditorRow(
-                    tags = state.tags,
-                    onAdd = { tagDialogOpen = true },
-                    onRemove = onRemoveTag,
-                )
+                    TagEditorRow(
+                        tags = state.tags,
+                        onAdd = { tagDialogOpen = true },
+                        onRemove = onRemoveTag,
+                    )
+
+                    mediaContent()
+                }
 
                 // One shared box for both modes: the geometry cannot differ between them.
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -345,7 +383,10 @@ internal fun EditorContent(
                                     .testTag(EditorTags.PREVIEW),
                             )
                         } else {
-                            EditorBody(state = bodyState)
+                            EditorBody(
+                                state = bodyState,
+                                onFocusChanged = { bodyFocused = it },
+                            )
                         }
                     }
                 }
@@ -385,7 +426,7 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 }
 
 @Composable
-private fun EditorBody(state: TextFieldState) {
+private fun EditorBody(state: TextFieldState, onFocusChanged: (Boolean) -> Unit) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -418,7 +459,10 @@ private fun EditorBody(state: TextFieldState) {
         onTextLayout = { getResult -> layout = getResult() },
         modifier = Modifier
             .fillMaxSize()
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .onSizeChanged { viewportHeight = it.height }
             .testTag(EditorTags.CONTENT),
         textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),

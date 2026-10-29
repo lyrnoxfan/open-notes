@@ -190,7 +190,7 @@
     <string name="backup_encryption_switch">使用密码加密</string>
     <string name="backup_encryption_password">备份密码</string>
     <string name="backup_encryption_confirm">确认密码</string>
-    <string name="backup_encryption_warning">不加密的备份是明文 JSON，任何拿到文件的人都能读到全部笔记。</string>
+    <string name="backup_encryption_warning">不加密的备份是明文 JSON，任何拿到文件的人都能读到全部笔记、图片和视频附件。</string>
     <string name="backup_encryption_min">密码至少 8 位</string>
     <string name="backup_encryption_mismatch">两次输入的密码不一致</string>
     <string name="backup_encryption_no_store">密码只用于这一次备份，不会被保存。</string>
