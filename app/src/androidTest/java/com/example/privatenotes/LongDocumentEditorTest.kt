@@ -217,18 +217,28 @@ class LongDocumentEditorTest {
         repeat(maxSwipes) {
             val bounds = field().fetchSemanticsNode().boundsInRoot
             val origin = textOriginInRoot()
-            val localY = origin.y + target.center.y - bounds.top
+            val firstGlyph = result.getBoundingBox(start)
+            val localY = origin.y + firstGlyph.center.y - bounds.top
             if (localY in 8f..(bounds.height - 8f)) {
-                Log.i("LongDocument", "BEFORE IME line=$line origin=$origin viewport=$bounds tapY=$localY")
+                // Tap inside the first rendered glyph, not at the text layout's left edge:
+                // the latter can fall outside glyph hit-testing on API 35 (especially at 2x).
+                // Stay on the glyph's leading side so the physical tap places the caret at the
+                // beginning of the target line while still exercising real pointer hit-testing.
+                val localX = origin.x + firstGlyph.left + (firstGlyph.width * .1f).coerceAtLeast(1f) - bounds.left
+                Log.i("LongDocument", "BEFORE IME line=$line origin=$origin viewport=$bounds tap=($localX,$localY) glyph=$firstGlyph")
                 val frames = watchFirstImeFrames(line, target, bounds.top)
-                field().performTouchInput { click(Offset(target.left + 1f, localY)) }
+                field().performTouchInput { click(Offset(localX, localY)) }
                 waitForKeyboard(true)
                 Thread.sleep(1_000)
                 assertTrue("IME opening must not flash the document top for offscreen line $line: $frames",
                     line <= 5 || frames.none { it >= bounds.top - 2f })
+                val actual = selection().start
+                val lineEnd = document.indexOf('\n', start).let { if (it < 0) document.length else it }
+                assertTrue("physical tap must place the caret on line $line; expected $start..$lineEnd, got $actual",
+                    actual in start..lineEnd)
                 Log.i("LongDocument", "AFTER IME line=$line origin=${textOriginInRoot()} viewport=${field().fetchSemanticsNode().boundsInRoot}")
-                Log.i("LongDocument", "tap line=$line expected=$start actual=${selection()} localY=$localY")
-                return start
+                Log.i("LongDocument", "tap line=$line expected=$start..$lineEnd actual=${selection()} local=($localX,$localY)")
+                return actual
             }
             field().performTouchInput {
                 if (localY >= bounds.height - 8f) {
