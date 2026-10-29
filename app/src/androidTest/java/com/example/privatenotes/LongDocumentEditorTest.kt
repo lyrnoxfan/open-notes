@@ -262,17 +262,20 @@ class LongDocumentEditorTest {
         }
         val finalBounds = field().fetchSemanticsNode().boundsInRoot
         val finalOrigin = textOriginInRoot()
-        val finalVisible = (start until lineEnd).mapNotNull { offset ->
+        val finalCandidates = (start until lineEnd).mapNotNull { offset ->
             runCatching { offset to result.getBoundingBox(offset) }.getOrNull()
-        }.filter { (_, rect) ->
-            val y = finalOrigin.y + rect.center.y - finalBounds.top
-            y in 0f..finalBounds.height
+        }.map { (offset, rect) ->
+            val rootCenter = finalOrigin + rect.center
+            val viewportCenter = rootCenter - finalBounds.topLeft
+            val insideX = rootCenter.x in (finalBounds.left + 2f)..(finalBounds.right - 2f)
+            val insideY = viewportCenter.y in 8f..(finalBounds.height - 8f)
+            "$offset:$rect@root=$rootCenter@local=$viewportCenter(x=$insideX,y=$insideY)"
         }
         error(
             "Could not reach line $line after $maxSwipes physical drags; " +
                 "documentHeight=${result.size.height}px viewportHeight=$viewportHeight px " +
                 "finalOrigin=$finalOrigin finalTargetY=${finalOrigin.y + target.center.y} " +
-                "visibleTargetGlyphs=${finalVisible.map { it.first }} finalBounds=$finalBounds",
+                "candidates=${finalCandidates.joinToString()} finalBounds=$finalBounds",
         )
     }
 
