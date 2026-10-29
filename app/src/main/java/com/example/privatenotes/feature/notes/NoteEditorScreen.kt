@@ -95,8 +95,19 @@ fun NoteEditorScreen(
     viewModel: NoteEditorViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    appLock: com.example.privatenotes.security.AppLock? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        appLock?.endSystemUi()
+        uri?.let { viewModel.importMedia(it, false) }
+    }
+    val videoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        appLock?.endSystemUi()
+        uri?.let { viewModel.importMedia(it, true) }
+    }
     LaunchedEffect(state.isDeleted) {
         if (state.isDeleted) onBack()
     }
@@ -111,6 +122,18 @@ fun NoteEditorScreen(
         onRemoveTag = viewModel::removeTag,
         onBack = onBack,
         onFlush = viewModel::flushInBackground,
+        mediaContent = { MediaAttachments(state,
+            onImage = {
+                appLock?.beginSystemUi()
+                try { imagePicker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "image/gif")) }
+                catch (_: Exception) { appLock?.endSystemUi() }
+            },
+            onVideo = {
+                appLock?.beginSystemUi()
+                try { videoPicker.launch(arrayOf("video/mp4", "video/webm", "video/3gpp")) }
+                catch (_: Exception) { appLock?.endSystemUi() }
+            },
+            onRemove = viewModel::removeMedia, read = viewModel::mediaBytes, videoSource = viewModel::mediaVideoSource) },
         modifier = modifier,
     )
 }
@@ -132,6 +155,7 @@ internal fun EditorContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onFlush: () -> Unit = {},
+    mediaContent: @Composable () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
@@ -329,6 +353,8 @@ internal fun EditorContent(
                     onAdd = { tagDialogOpen = true },
                     onRemove = onRemoveTag,
                 )
+
+                mediaContent()
 
                 // One shared box for both modes: the geometry cannot differ between them.
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {

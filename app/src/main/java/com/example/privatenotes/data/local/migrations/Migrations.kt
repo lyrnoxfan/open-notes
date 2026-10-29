@@ -2,12 +2,13 @@ package com.example.privatenotes.data.local.migrations
 
 import androidx.room.migration.Migration
 
-/**
- * Every schema change lands here as an explicit, tested [Migration] (§5.4).
- *
- * Empty at version 1 — nothing to migrate from yet. It exists now so the database builder is
- * already wired to use it, and so nobody is tempted to reach for a destructive fallback later.
- */
 object Migrations {
-    val ALL: Array<Migration> = emptyArray()
+    val MEDIA_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `note_media` (`id` TEXT NOT NULL, `noteId` TEXT NOT NULL, `name` TEXT NOT NULL, `mime` TEXT NOT NULL, `size` INTEGER NOT NULL, `sha256` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`noteId`) REFERENCES `notes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_media_noteId` ON `note_media` (`noteId`)")
+            db.execSQL("CREATE TABLE IF NOT EXISTS `media_chunks` (`mediaId` TEXT NOT NULL, `position` INTEGER NOT NULL, `bytes` BLOB NOT NULL, PRIMARY KEY(`mediaId`, `position`), FOREIGN KEY(`mediaId`) REFERENCES `note_media`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
+        }
+    }
+    val ALL: Array<Migration> = arrayOf(MEDIA_1_2)
 }

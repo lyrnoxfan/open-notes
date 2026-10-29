@@ -81,6 +81,7 @@ fun AppNavigation(container: AppContainer) {
             val noteId = backStackEntry.arguments?.getString(Routes.ARG_NOTE_ID)
             val editorViewModel: NoteEditorViewModel = viewModel(
                 factory = NoteEditorViewModel.factory(
+                    mediaRepository = container.mediaRepository,
                     repository = container.noteRepository,
                     tagRepository = container.tagRepository,
                     noteSettings = container.noteSettings,
@@ -91,6 +92,7 @@ fun AppNavigation(container: AppContainer) {
                 ),
             )
             NoteEditorScreen(
+                appLock = container.appLock,
                 viewModel = editorViewModel,
                 onBack = { navController.popBackStack() },
             )

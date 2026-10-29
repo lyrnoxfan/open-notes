@@ -52,7 +52,7 @@ class BackupJsonTest {
 
     @Test
     fun `a backup from a newer schema is reported as unsupported`() {
-        val failure = failureOf { json.validate(valid.copy(schemaVersion = 2)) }
+        val failure = failureOf { json.validate(valid.copy(schemaVersion = BackupDocument.CURRENT_SCHEMA_VERSION + 1)) }
 
         assertEquals(BackupErrorKind.UNSUPPORTED_VERSION, failure.kind)
     }

@@ -70,8 +70,17 @@ class BackupMerger(
                 localRefs = dao.allNoteTags(),
                 localMarkers = dao.allDeletionMarkers(),
                 backup = backup,
+                localMedia = database.mediaDao().all().groupBy { it.noteId },
             )
 
+            applyMergePlan(database, plan, backup)
+            plan.report
+        }
+    }
+}
+
+internal suspend fun applyMergePlan(database: AppDatabase, plan: MergePlan, backup: BackupDocument, restoreMedia: Boolean = true) {
+    val dao = database.backupDao()
             for (noteId in plan.notesToDelete) {
                 dao.deleteNote(noteId)
             }
@@ -80,6 +89,13 @@ class BackupMerger(
             }
             for (note in plan.notesToUpsert) {
                 if (dao.updateNote(note) == 0) dao.insertNote(note)
+            }
+            // v1 has no media knowledge: importing an old archive must not erase local attachments.
+            for (note in plan.notesToUpsert.filter { restoreMedia && backup.schemaVersion >= 2 }) {
+                database.mediaDao().clear(note.id)
+                for (media in backup.notes.first { it.id == note.id }.media) {
+                    com.example.privatenotes.data.media.MediaRules.insert(database.mediaDao(), note.id, media)
+                }
             }
             for ((noteId, refs) in plan.refsToReplace) {
                 dao.clearTagsForNote(noteId)
@@ -91,9 +107,7 @@ class BackupMerger(
             for (marker in plan.markersToUpsert) {
                 dao.upsertDeletionMarker(marker)
             }
-            plan.report
-        }
-    }
+
 }
 
 internal data class MergePlan(
@@ -124,6 +138,7 @@ internal object MergePlanner {
         localRefs: List<NoteTagCrossRef>,
         localMarkers: List<DeletionMarkerEntity>,
         backup: BackupDocument,
+        localMedia: Map<String, List<com.example.privatenotes.data.media.NoteMediaEntity>> = emptyMap(),
     ): MergePlan {
         var insertedNotes = 0
         var updatedNotes = 0
@@ -274,7 +289,8 @@ internal object MergePlanner {
                 }
 
                 else -> {
-                    if (sameContent(local, note)) {
+                    if (sameContent(local, note) && localMedia[note.id].orEmpty().map { listOf(it.id, it.name, it.mime, it.size.toString(), it.sha256) }.sortedBy { it.first() } ==
+                        note.media.map { listOf(it.id, it.name, it.mime, it.size.toString(), it.sha256) }.sortedBy { it.first() }) {
                         unchangedNotes++
                     } else {
                         keptLocalNotes++

@@ -154,7 +154,7 @@ class BackupRoundTripTest {
         val text = String(archived.bytes, Charsets.UTF_8)
 
         assertTrue(text.contains("\"format\": \"private-notes-backup\""))
-        assertTrue(text.contains("\"schemaVersion\": 1"))
+        assertTrue(text.contains("\"schemaVersion\": 2"))
     }
 
     private suspend fun seedSource() {

@@ -110,3 +110,15 @@ internal class FakeDocumentSource(
 
     override suspend fun read(uri: Uri): ByteArray = bytes.copyOf()
 }
+
+/** Synthetic container signature, used to verify complete backup coverage, not decoding. */
+internal suspend fun seedBackupMedia(database: com.example.privatenotes.data.local.AppDatabase,
+    context: android.content.Context, size: Int): Pair<String, ByteArray> {
+    val clock = com.example.privatenotes.data.repository.TimeSource { 1000L }
+    val id = com.example.privatenotes.data.repository.RoomNoteRepository(database, clock).createNote("media", "private")
+    val bytes = ByteArray(size) { (it % 251).toByte() }
+    "ftyp".toByteArray().copyInto(bytes, 4)
+    com.example.privatenotes.data.media.MediaRepository(database, context, clock)
+        .importStream(id, "synthetic.mp4", "video/mp4", bytes.inputStream())
+    return id to bytes
+}

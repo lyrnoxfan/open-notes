@@ -116,6 +116,8 @@ class BackupSettingsViewModel(
     private val noteSettings: NoteSettings,
     /** Where a downloaded backup is staged before being merged; the app cache directory. */
     private val cacheDirProvider: () -> File = { File(System.getProperty("java.io.tmpdir") ?: ".") },
+    private val streamingAppVersion: () -> String = { "unknown" },
+    private val streamingArchiveProvider: (() -> com.example.privatenotes.data.backup.StreamingMediaArchive)? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(BackupSettingsUiState())
@@ -588,6 +590,38 @@ class BackupSettingsViewModel(
         return e as? BackupException ?: BackupException(BackupErrorKind.UNKNOWN, e.message ?: "未知错误", e)
     }
 
+    fun streamingBackup(uri: Uri, resolver: android.content.ContentResolver, password: CharArray, restore: Boolean) {
+        if (_state.value.busy) { password.fill('\u0000'); return }
+        _state.update { it.copy(operation = if (restore) BackupOperation.IMPORTING else BackupOperation.LOCAL_BACKUP) }
+        viewModelScope.launch {
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    val archive = checkNotNull(streamingArchiveProvider) { "大媒体备份不可用" }.invoke()
+                    if (restore) resolver.openInputStream(uri)?.use { archive.restore(it, password) }
+                        ?: error("无法读取备份")
+                    else {
+                        resolver.openOutputStream(uri, "wt")?.use {
+                            archive.write(it, password, streamingAppVersion(), System.currentTimeMillis())
+                        } ?: error("无法写入备份")
+                        null
+                    }
+                }
+                _state.update { it.copy(
+                    importReport = report?.let { result -> ImportOutcome(result, safetyBackupFileName = null) } ?: it.importReport,
+                    message = BackupNotice.Info(if (restore) "大媒体备份合并完成，请查看导入结果；已有较新版本或冲突时未覆盖本地内容" else "大媒体加密备份已完成"),
+                ) }
+            } catch (failure: Exception) {
+                // Only a newly created export document is cleaned; never delete an imported source.
+                if (!restore) runCatching { android.provider.DocumentsContract.deleteDocument(resolver, uri) }
+                if (failure is CancellationException) throw failure
+                _state.update { it.copy(message = BackupNotice.Info(if (restore) "恢复失败，数据库已回滚：${failure.message}" else "备份未完成，未保留有效备份：${failure.message}")) }
+            } finally {
+                password.fill('\u0000')
+                _state.update { it.copy(operation = null) }
+            }
+        }
+    }
+
     companion object {
         fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
             initializer {
@@ -600,6 +634,8 @@ class BackupSettingsViewModel(
                     scheduler = container.backupScheduler,
                     noteSettings = container.noteSettings,
                     cacheDirProvider = { container.cacheDirectory },
+                    streamingAppVersion = { container.appVersionName },
+                    streamingArchiveProvider = { com.example.privatenotes.data.backup.StreamingMediaArchive(container.database) },
                 )
             }
         }

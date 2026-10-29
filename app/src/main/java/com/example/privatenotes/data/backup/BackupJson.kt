@@ -91,8 +91,17 @@ class BackupJson(
             throw invalid("Backup contains more rows than this app can import")
         }
 
+        val mediaIds = HashSet<String>()
         val noteIds = HashSet<String>(document.notes.size)
         for (note in document.notes) {
+            if (document.schemaVersion == 1 && note.media.isNotEmpty()) throw invalid("Schema 1 cannot contain media")
+            if (note.media.size > com.example.privatenotes.data.media.MediaRules.MAX_COUNT ||
+                note.media.sumOf { it.size.toLong() } > com.example.privatenotes.data.media.MediaRules.MAX_NOTE_BYTES) throw invalid("Too much media in note")
+            for (media in note.media) {
+                if (!mediaIds.add(media.id)) throw invalid("Duplicate media id")
+                try { com.example.privatenotes.data.media.MediaRules.validate(media) }
+                catch (failure: IllegalArgumentException) { throw invalid("Invalid media: ${failure.message}") }
+            }
             requireId(note.id, "note.id")
             if (!noteIds.add(note.id)) throw invalid("Duplicate note id in backup")
             if (note.title.length > BackupLimits.MAX_TITLE_LENGTH) throw invalid("Note title is too long")

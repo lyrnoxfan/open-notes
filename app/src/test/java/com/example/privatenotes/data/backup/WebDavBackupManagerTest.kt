@@ -170,4 +170,23 @@ class WebDavBackupManagerTest {
 
         override suspend fun download(fileName: String): ByteArray = ByteArray(0)
     }
+    @Test fun `webdav backup includes small media and hash`() = runBlocking {
+        val (id, bytes) = seedBackupMedia(database, context, 300000)
+        manager.backup()
+        val doc = archive.read(remote.uploadedBytes!!, null)
+        org.junit.Assert.assertArrayEquals(bytes, com.example.privatenotes.data.media.MediaRules.validate(doc.notes.single { it.id == id }.media.single()))
+        assertEquals(now, statusStore.status.value.remoteLastSuccessAt)
+    }
+    @Test fun `oversize media fails webdav before upload without false success`() = runBlocking {
+        statusStore.markRemoteSuccess(123L)
+        seedBackupMedia(database, context, 9*1024*1024)
+        val error = runCatching { manager.backup() }.exceptionOrNull() as BackupException
+        assertEquals(BackupErrorKind.STORAGE, error.kind)
+        assertTrue(error.message!!.contains("大媒体加密备份"))
+        assertNull(remote.uploadedBytes)
+        assertFalse(remote.deleted)
+        assertEquals(123L, statusStore.status.value.remoteLastSuccessAt)
+        assertTrue(statusStore.status.value.remoteLastFailure!!.detail!!.contains("大媒体加密备份"))
+    }
+
 }

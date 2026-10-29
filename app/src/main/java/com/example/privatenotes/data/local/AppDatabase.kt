@@ -12,11 +12,13 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         NoteEntity::class,
+        com.example.privatenotes.data.media.NoteMediaEntity::class,
+        com.example.privatenotes.data.media.MediaChunkEntity::class,
         TagEntity::class,
         NoteTagCrossRef::class,
         DeletionMarkerEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -25,6 +27,8 @@ abstract class AppDatabase : RoomDatabase() {
     internal var transactionState: (() -> Boolean)? = null
 
     override fun inTransaction(): Boolean = transactionState?.invoke() ?: super.inTransaction()
+
+    abstract fun mediaDao(): com.example.privatenotes.data.media.MediaDao
 
     abstract fun noteDao(): NoteDao
     abstract fun tagDao(): TagDao
@@ -37,6 +41,6 @@ abstract class AppDatabase : RoomDatabase() {
         const val NAME = "private_notes.db"
 
         /** Schema version, exposed so deletion markers can record which version made them. */
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
     }
 }

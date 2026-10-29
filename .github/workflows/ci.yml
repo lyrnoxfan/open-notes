@@ -149,6 +149,7 @@ jobs:
             build/long-document*.txt
             build/ui-render.txt
             build/swipe-search-regression.txt
+            build/media-device.txt
             build/swipe-evidence/*.png
             build/long-document-evidence/**/*.png
           retention-days: 14
