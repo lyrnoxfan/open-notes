@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -60,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -248,6 +251,11 @@ internal fun EditorContent(
         )
     }
 
+    // At large accessibility font scales, the title, tag editor and media actions can consume
+    // the entire resized window when the IME opens. Keep the active writing surface measurable:
+    // these secondary controls return as soon as the keyboard is dismissed.
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -343,18 +351,20 @@ internal fun EditorContent(
                     .fillMaxSize()
                     .padding(horizontal = 24.dp),
             ) {
-                EditorTitle(
-                    title = state.title,
-                    onTitleChange = onTitleChange,
-                )
+                if (!imeVisible) {
+                    EditorTitle(
+                        title = state.title,
+                        onTitleChange = onTitleChange,
+                    )
 
-                TagEditorRow(
-                    tags = state.tags,
-                    onAdd = { tagDialogOpen = true },
-                    onRemove = onRemoveTag,
-                )
+                    TagEditorRow(
+                        tags = state.tags,
+                        onAdd = { tagDialogOpen = true },
+                        onRemove = onRemoveTag,
+                    )
 
-                mediaContent()
+                    mediaContent()
+                }
 
                 // One shared box for both modes: the geometry cannot differ between them.
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {

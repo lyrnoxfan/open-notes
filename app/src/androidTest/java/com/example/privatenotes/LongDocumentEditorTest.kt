@@ -237,7 +237,17 @@ class LongDocumentEditorTest {
     }
 
     private fun hideKeyboard() {
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        // Espresso.closeSoftKeyboard() requires Espresso's selected root to own window focus.
+        // On API 35 the real activity can temporarily report no focus after the isolated device
+        // checks even though the test activity is alive; ask the activity's IME controller instead.
+        compose.activityRule.scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            val insets = androidx.core.view.ViewCompat.getRootWindowInsets(decor)
+            if (insets?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true) {
+                androidx.core.view.WindowInsetsControllerCompat(activity.window, decor)
+                    .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+            }
+        }
         waitForKeyboard(false)
     }
 
