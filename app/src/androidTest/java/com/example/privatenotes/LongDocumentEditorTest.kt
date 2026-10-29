@@ -207,6 +207,7 @@ class LongDocumentEditorTest {
         val result = layout()
         val start = document.indexOf("第%03d行".format(line))
         check(start >= 0)
+        val lineEnd = document.indexOf('\n', start).let { if (it < 0) document.length else it }
         val target = result.getCursorRect(start)
         val viewportHeight = field().fetchSemanticsNode().boundsInRoot.height
         // At 2x accessibility text and 320dp width, one logical document line can wrap into
@@ -217,15 +218,26 @@ class LongDocumentEditorTest {
         repeat(maxSwipes) {
             val bounds = field().fetchSemanticsNode().boundsInRoot
             val origin = textOriginInRoot()
-            val firstGlyph = result.getBoundingBox(start)
-            val localY = origin.y + firstGlyph.center.y - bounds.top
-            if (localY in 8f..(bounds.height - 8f)) {
-                // Tap inside the first rendered glyph, not at the text layout's left edge:
-                // the latter can fall outside glyph hit-testing on API 35 (especially at 2x).
-                // Stay on the glyph's leading side so the physical tap places the caret at the
-                // beginning of the target line while still exercising real pointer hit-testing.
-                val localX = origin.x + firstGlyph.left + (firstGlyph.width * .1f).coerceAtLeast(1f) - bounds.left
-                Log.i("LongDocument", "BEFORE IME line=$line origin=$origin viewport=$bounds tap=($localX,$localY) glyph=$firstGlyph")
+            // A logical line may wrap over several display lines at large font scales. Near
+            // document end, the first character's glyph can be just above the scroll limit even
+            // though later characters from that same logical line are visible. Pick a real
+            // visible glyph within the requested line; never teleport selection or tap blank
+            // space. The selection assertion below still proves the physical hit landed on line.
+            val visibleGlyph = (start until lineEnd).asSequence()
+                .mapNotNull { offset -> runCatching { offset to result.getBoundingBox(offset) }.getOrNull() }
+                .firstOrNull { (_, rect) ->
+                    val center = origin.y + rect.center.y - bounds.top
+                    center in 8f..(bounds.height - 8f) &&
+                        origin.x + rect.center.x in (bounds.left + 2f)..(bounds.right - 2f)
+                }
+            val localY = visibleGlyph?.let { origin.y + it.second.center.y - bounds.top }
+                ?: (origin.y + target.center.y - bounds.top)
+            if (visibleGlyph != null) {
+                val glyph = visibleGlyph.second
+                // Aim inside the observed glyph, not at the text layout's leading edge; on API35
+                // a glyph at x=0 may not receive a physical hit if the pointer falls on its edge.
+                val localX = origin.x + glyph.left + (glyph.width * .5f).coerceAtLeast(1f) - bounds.left
+                Log.i("LongDocument", "BEFORE IME line=$line offset=${visibleGlyph.first} origin=$origin viewport=$bounds tap=($localX,$localY) glyph=$glyph")
                 val frames = watchFirstImeFrames(line, target, bounds.top)
                 field().performTouchInput { click(Offset(localX, localY)) }
                 waitForKeyboard(true)
@@ -233,7 +245,6 @@ class LongDocumentEditorTest {
                 assertTrue("IME opening must not flash the document top for offscreen line $line: $frames",
                     line <= 5 || frames.none { it >= bounds.top - 2f })
                 val actual = selection().start
-                val lineEnd = document.indexOf('\n', start).let { if (it < 0) document.length else it }
                 assertTrue("physical tap must place the caret on line $line; expected $start..$lineEnd, got $actual",
                     actual in start..lineEnd)
                 Log.i("LongDocument", "AFTER IME line=$line origin=${textOriginInRoot()} viewport=${field().fetchSemanticsNode().boundsInRoot}")
@@ -249,10 +260,19 @@ class LongDocumentEditorTest {
             }
             compose.waitForIdle()
         }
+        val finalBounds = field().fetchSemanticsNode().boundsInRoot
+        val finalOrigin = textOriginInRoot()
+        val finalVisible = (start until lineEnd).mapNotNull { offset ->
+            runCatching { offset to result.getBoundingBox(offset) }.getOrNull()
+        }.filter { (_, rect) ->
+            val y = finalOrigin.y + rect.center.y - finalBounds.top
+            y in 0f..finalBounds.height
+        }
         error(
             "Could not reach line $line after $maxSwipes physical drags; " +
                 "documentHeight=${result.size.height}px viewportHeight=$viewportHeight px " +
-                "finalOrigin=${textOriginInRoot()} finalTargetY=${textOriginInRoot().y + target.center.y}",
+                "finalOrigin=$finalOrigin finalTargetY=${finalOrigin.y + target.center.y} " +
+                "visibleTargetGlyphs=${finalVisible.map { it.first }} finalBounds=$finalBounds",
         )
     }
 
