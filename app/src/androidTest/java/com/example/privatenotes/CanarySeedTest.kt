@@ -49,6 +49,22 @@ class CanarySeedTest {
         composeRule.onNodeWithTag(EditorTags.TITLE).performTextInput(CANARY_TITLE)
         composeRule.onNodeWithTag(EditorTags.CONTENT).performTextInput(CANARY_BODY)
 
+        // Header actions intentionally collapse while the body IME is visible so large-font
+        // writing retains a usable viewport. Dismiss it before exercising the tag action.
+        composeRule.activityRule.scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            androidx.core.view.WindowInsetsControllerCompat(activity.window, decor)
+                .hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+        }
+        composeRule.waitUntil(10_000) {
+            var visible = false
+            composeRule.activityRule.scenario.onActivity { activity ->
+                visible = androidx.core.view.ViewCompat.getRootWindowInsets(activity.window.decorView)
+                    ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            }
+            !visible
+        }
+        composeRule.waitForIdle()
         // By text, not by tag: EditorTags.ADD_TAG is declared but no longer applied to the pill
         // that replaced the AssistChip (recorded in docs/test-report.md as a defect).
         composeRule.onNode(hasText("添加标签")).performClick()

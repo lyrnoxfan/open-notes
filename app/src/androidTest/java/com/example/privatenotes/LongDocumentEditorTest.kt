@@ -208,7 +208,13 @@ class LongDocumentEditorTest {
         val start = document.indexOf("第%03d行".format(line))
         check(start >= 0)
         val target = result.getCursorRect(start)
-        repeat(60) {
+        val viewportHeight = field().fetchSemanticsNode().boundsInRoot.height
+        // At 2x accessibility text and 320dp width, one logical document line can wrap into
+        // multiple visual lines. Bound physical drags from the actual rendered text extent rather
+        // than assuming 60 gestures always reach line 100 on every density/font configuration.
+        val swipeDistance = (viewportHeight * .8f).coerceAtLeast(1f)
+        val maxSwipes = ((result.size.height / swipeDistance).toInt() + 12).coerceIn(60, 1_000)
+        repeat(maxSwipes) {
             val bounds = field().fetchSemanticsNode().boundsInRoot
             val origin = textOriginInRoot()
             val localY = origin.y + target.center.y - bounds.top
@@ -226,14 +232,18 @@ class LongDocumentEditorTest {
             }
             field().performTouchInput {
                 if (localY >= bounds.height - 8f) {
-                    swipeWithVelocity(Offset(width * .8f, height * .8f), Offset(width * .8f, height * .25f), 0f, 500)
+                    swipeWithVelocity(Offset(width * .8f, height * .9f), Offset(width * .8f, height * .1f), 0f, 500)
                 } else {
-                    swipeWithVelocity(Offset(width * .8f, height * .25f), Offset(width * .8f, height * .8f), 0f, 500)
+                    swipeWithVelocity(Offset(width * .8f, height * .1f), Offset(width * .8f, height * .9f), 0f, 500)
                 }
             }
             compose.waitForIdle()
         }
-        error("Could not reach line $line by scrolling")
+        error(
+            "Could not reach line $line after $maxSwipes physical drags; " +
+                "documentHeight=${result.size.height}px viewportHeight=$viewportHeight px " +
+                "finalOrigin=${textOriginInRoot()} finalTargetY=${textOriginInRoot().y + target.center.y}",
+        )
     }
 
     private fun hideKeyboard() {

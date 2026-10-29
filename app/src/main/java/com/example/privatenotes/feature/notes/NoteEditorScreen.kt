@@ -255,6 +255,8 @@ internal fun EditorContent(
     // the entire resized window when the IME opens. Keep the active writing surface measurable:
     // these secondary controls return as soon as the keyboard is dismissed.
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var bodyFocused by remember { mutableStateOf(false) }
+    val bodyImeVisible = imeVisible && bodyFocused
 
     Scaffold(
         modifier = modifier,
@@ -351,7 +353,7 @@ internal fun EditorContent(
                     .fillMaxSize()
                     .padding(horizontal = 24.dp),
             ) {
-                if (!imeVisible) {
+                if (!bodyImeVisible) {
                     EditorTitle(
                         title = state.title,
                         onTitleChange = onTitleChange,
@@ -381,7 +383,10 @@ internal fun EditorContent(
                                     .testTag(EditorTags.PREVIEW),
                             )
                         } else {
-                            EditorBody(state = bodyState)
+                            EditorBody(
+                                state = bodyState,
+                                onFocusChanged = { bodyFocused = it },
+                            )
                         }
                     }
                 }
@@ -421,7 +426,7 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 }
 
 @Composable
-private fun EditorBody(state: TextFieldState) {
+private fun EditorBody(state: TextFieldState, onFocusChanged: (Boolean) -> Unit) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -454,7 +459,10 @@ private fun EditorBody(state: TextFieldState) {
         onTextLayout = { getResult -> layout = getResult() },
         modifier = Modifier
             .fillMaxSize()
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .onSizeChanged { viewportHeight = it.height }
             .testTag(EditorTags.CONTENT),
         textStyle = bodyStyle.copy(color = MaterialTheme.colorScheme.onBackground),
