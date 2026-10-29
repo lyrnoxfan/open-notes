@@ -16,7 +16,9 @@ import com.example.privatenotes.feature.notes.NoteListTags
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -83,8 +85,14 @@ class CanarySeedTest {
         }
         assertEquals("the canary note must exist", CANARY_TITLE, note?.title)
         assertEquals(CANARY_BODY, note?.content)
-        val tags = runBlocking { app.container.tagRepository.observeAll().first() }
-        assertEquals(true, tags.any { it.name == CANARY_TAG })
+        // If the editor already auto-saved before the tag was entered, addTag persists it in
+        // its own coroutine. Wait for that real database write instead of racing the first query.
+        val tags = runBlocking {
+            withTimeout(10_000) {
+                app.container.tagRepository.observeAll().first { all -> all.any { it.name == CANARY_TAG } }
+            }
+        }
+        assertTrue(tags.any { it.name == CANARY_TAG })
 
         // 2. The WebDAV password, stored through the same path the settings screen uses.
         app.container.backupStatusStore.saveWebDav(

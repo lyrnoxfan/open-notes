@@ -215,7 +215,9 @@ class LongDocumentEditorTest {
         // than assuming 60 gestures always reach line 100 on every density/font configuration.
         val swipeDistance = (viewportHeight * .8f).coerceAtLeast(1f)
         val maxSwipes = ((result.size.height / swipeDistance).toInt() + 12).coerceIn(60, 1_000)
-        repeat(maxSwipes) {
+        // Check once before the first drag and again after each drag, including the final allowed
+        // drag. A long wrapped logical line can enter the hit-test viewport on that last gesture.
+        for (swipeCount in 0..maxSwipes) {
             val bounds = field().fetchSemanticsNode().boundsInRoot
             val origin = textOriginInRoot()
             // A logical line may wrap over several display lines at large font scales. Near
@@ -251,6 +253,7 @@ class LongDocumentEditorTest {
                 Log.i("LongDocument", "tap line=$line expected=$start..$lineEnd actual=${selection()} local=($localX,$localY)")
                 return actual
             }
+            if (swipeCount == maxSwipes) break
             field().performTouchInput {
                 if (localY >= bounds.height - 8f) {
                     swipeWithVelocity(Offset(width * .8f, height * .9f), Offset(width * .8f, height * .1f), 0f, 500)
