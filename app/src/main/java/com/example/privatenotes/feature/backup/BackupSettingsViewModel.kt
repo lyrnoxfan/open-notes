@@ -341,7 +341,7 @@ class BackupSettingsViewModel(
                                 fileName = file.fileName,
                                 sizeBytes = file.sizeBytes,
                                 modifiedAt = file.lastModifiedAt,
-                                encrypted = file.fileName.endsWith(".pnb"),
+                                encrypted = file.fileName.endsWith(".pnb") || file.fileName.endsWith(".pnm"),
                             )
                         },
                         message = if (files.isEmpty()) {
@@ -389,9 +389,8 @@ class BackupSettingsViewModel(
             clearStaging()
             val staged = try {
                 withContext(Dispatchers.IO) {
-                    val bytes = webDavBackupManager.download(fileName)
                     val file = File(cacheDirProvider(), fileName.substringAfterLast('/'))
-                    file.writeBytes(bytes)
+                    webDavBackupManager.downloadTo(fileName, file)
                     file
                 }
             } catch (e: CancellationException) {

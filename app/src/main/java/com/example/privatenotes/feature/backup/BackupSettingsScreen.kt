@@ -1283,7 +1283,7 @@ private fun StreamingBackupSection(viewModel: BackupSettingsViewModel, lock: App
         else password?.fill('\u0000')
     }
     SettingsSection(title = "大媒体加密备份") {
-        Text("视频支持 256 MiB，单篇合计 512 MiB；此格式随备份携带媒体，总量最多 2 GiB。仅本地手动备份，不用于自动备份或 WebDAV；旧 JSON / PNB 仍使用上方原入口。请记住密码，旧版应用不能读取此格式。")
+        Text("此格式流式携带正文中的图片和视频；可用空间不足时会中止，不再使用原有的文件大小配额。本地自动备份与 WebDAV 也使用流式格式；原有 JSON / PNB 仍可导入。此处导出加密 PNM，请记住密码，旧版应用不能读取新流式格式。")
         OutlinedButton(enabled = !busy, onClick = { prompt = false }, modifier = Modifier.testTag("stream_backup_export")) { Text("导出含媒体的加密备份") }
         OutlinedButton(enabled = !busy, onClick = { prompt = true }, modifier = Modifier.testTag("stream_backup_restore")) { Text("恢复大媒体加密备份") }
     }

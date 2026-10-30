@@ -55,6 +55,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.MutableIntState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,7 +78,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.privatenotes.R
 import com.example.privatenotes.ui.components.ContentMaxWidth
-import com.example.privatenotes.ui.markdown.MarkdownText
+
+/** Preserve the picker insertion point across activity recreation while the system picker is open. */
+@Composable
+internal fun rememberMediaInsertionOffset(initial: Int): MutableIntState =
+    rememberSaveable { mutableIntStateOf(initial) }
 
 /**
  * Note editor.
@@ -101,15 +108,16 @@ fun NoteEditorScreen(
     appLock: com.example.privatenotes.security.AppLock? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val insertionOffset = rememberMediaInsertionOffset(state.content.length)
     val imagePicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         appLock?.endSystemUi()
-        uri?.let { viewModel.importMedia(it, false) }
+        uri?.let { viewModel.importMedia(it, false, insertionOffset.intValue) }
     }
     val videoPicker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         appLock?.endSystemUi()
-        uri?.let { viewModel.importMedia(it, true) }
+        uri?.let { viewModel.importMedia(it, true, insertionOffset.intValue) }
     }
     LaunchedEffect(state.isDeleted) {
         if (state.isDeleted) onBack()
@@ -125,18 +133,26 @@ fun NoteEditorScreen(
         onRemoveTag = viewModel::removeTag,
         onBack = onBack,
         onFlush = viewModel::flushInBackground,
-        mediaContent = { MediaAttachments(state,
+        onRemoveMedia = viewModel::removeMedia,
+        viewModelMediaImagePreview = viewModel::mediaImagePreview,
+        viewModelMediaVideoSource = viewModel::mediaVideoSource,
+        mediaContent = { bodyText, caretOffset ->
+            MediaAttachments(state,
             onImage = {
+                insertionOffset.intValue = caretOffset
+                viewModel.onContentChange(bodyText)
                 appLock?.beginSystemUi()
                 try { imagePicker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "image/gif")) }
                 catch (_: Exception) { appLock?.endSystemUi() }
             },
             onVideo = {
+                insertionOffset.intValue = caretOffset
+                viewModel.onContentChange(bodyText)
                 appLock?.beginSystemUi()
                 try { videoPicker.launch(arrayOf("video/mp4", "video/webm", "video/3gpp")) }
                 catch (_: Exception) { appLock?.endSystemUi() }
-            },
-            onRemove = viewModel::removeMedia, read = viewModel::mediaBytes, videoSource = viewModel::mediaVideoSource) },
+            })
+        },
         modifier = modifier,
     )
 }
@@ -158,7 +174,10 @@ internal fun EditorContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onFlush: () -> Unit = {},
-    mediaContent: @Composable () -> Unit = {},
+    mediaContent: @Composable (String, Int) -> Unit = { _, _ -> },
+    onRemoveMedia: (com.example.privatenotes.data.media.NoteMediaEntity) -> Unit = {},
+    viewModelMediaImagePreview: suspend (com.example.privatenotes.data.media.NoteMediaEntity) -> android.graphics.Bitmap = { error("媒体预览不可用") },
+    viewModelMediaVideoSource: suspend (com.example.privatenotes.data.media.NoteMediaEntity) -> android.media.MediaDataSource = { error("媒体预览不可用") },
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var tagDialogOpen by remember { mutableStateOf(false) }
@@ -184,6 +203,9 @@ internal fun EditorContent(
     // Load once. Saved String echoes must never replace a newer editing buffer or reset its
     // selection/composition; edits flow out of TextFieldState, not back into it on each save.
     var bodyLoaded by remember { mutableStateOf(state.isLoaded) }
+    // Keep the same native input connection after deleting the last embedded object.
+    var richBody by remember { mutableStateOf(InlineMediaSyntax.ids(state.content).isNotEmpty()) }
+    if (InlineMediaSyntax.ids(bodyState.text.toString()).isNotEmpty()) richBody = true
     LaunchedEffect(state.isLoaded) {
         if (state.isLoaded && !bodyLoaded) {
             bodyState.edit {
@@ -193,9 +215,19 @@ internal fun EditorContent(
             bodyLoaded = true
         }
     }
+    LaunchedEffect(state.bodyMutationRevision, bodyLoaded) {
+        if (bodyLoaded && bodyState.text.toString() != state.content) {
+            bodyState.edit {
+                replace(0, length, state.content)
+                selection = TextRange(state.content.length)
+            }
+        }
+    }
     androidx.activity.compose.BackHandler {
-        onContentChange(bodyState.text.toString())
-        onBack()
+        if (!state.mediaBusy) {
+            onContentChange(bodyState.text.toString())
+            onBack()
+        }
     }
     // Lifecycle saves must sample the actual buffer BEFORE flushing the ViewModel. Otherwise
     // an immediate background/exit can outrun snapshotFlow's final keystroke delivery.
@@ -263,7 +295,7 @@ internal fun EditorContent(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = {
+                    IconButton(enabled = !state.mediaBusy, onClick = {
                         onContentChange(bodyState.text.toString())
                         onBack()
                     }) {
@@ -357,6 +389,7 @@ internal fun EditorContent(
                     EditorTitle(
                         title = state.title,
                         onTitleChange = onTitleChange,
+                        enabled = !state.mediaBusy,
                     )
 
                     TagEditorRow(
@@ -365,8 +398,9 @@ internal fun EditorContent(
                         onRemove = onRemoveTag,
                     )
 
-                    mediaContent()
                 }
+                // Keep insertion actions reachable while typing at a body caret.
+                mediaContent(bodyState.text.toString(), bodyState.selection.end)
 
                 // One shared box for both modes: the geometry cannot differ between them.
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
@@ -376,17 +410,28 @@ internal fun EditorContent(
                         label = "editor-preview",
                     ) { preview ->
                         if (preview) {
-                            MarkdownText(
-                                markdown = state.content,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .testTag(EditorTags.PREVIEW),
+                            InlineMediaPreview(
+                                body = state.content,
+                                media = state.media,
+                                imagePreview = viewModelMediaImagePreview,
+                                videoSource = viewModelMediaVideoSource,
+                                onRemove = { item -> onContentChange(bodyState.text.toString()); onRemoveMedia(item) },
+                                modifier = Modifier.fillMaxSize().testTag(EditorTags.PREVIEW),
                             )
                         } else {
-                            EditorBody(
-                                state = bodyState,
-                                onFocusChanged = { bodyFocused = it },
-                            )
+                            if (!richBody) {
+                                EditorBody(state = bodyState, onFocusChanged = { bodyFocused = it }, enabled = !state.mediaBusy)
+                            } else {
+                                InlineMediaEditor(
+                                    state = bodyState,
+                                    enabled = !state.mediaBusy,
+                                    media = state.media,
+                                    imagePreview = viewModelMediaImagePreview,
+                                    videoSource = viewModelMediaVideoSource,
+                                    onRemove = { item -> onContentChange(bodyState.text.toString()); onRemoveMedia(item) },
+                                    onFocusChanged = { bodyFocused = it },
+                                )
+                            }
                         }
                     }
                 }
@@ -396,13 +441,14 @@ internal fun EditorContent(
 }
 
 @Composable
-private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
+private fun EditorTitle(title: String, onTitleChange: (String) -> Unit, enabled: Boolean) {
     val titleStyle = MaterialTheme.typography.headlineSmall
     // No alpha on the placeholder: at 70% the ink drops under 4.5:1 in dark mode.
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     BasicTextField(
         value = title,
+        enabled = enabled,
         onValueChange = onTitleChange,
         modifier = Modifier
             .fillMaxWidth()
@@ -426,7 +472,7 @@ private fun EditorTitle(title: String, onTitleChange: (String) -> Unit) {
 }
 
 @Composable
-private fun EditorBody(state: TextFieldState, onFocusChanged: (Boolean) -> Unit) {
+private fun EditorBody(state: TextFieldState, onFocusChanged: (Boolean) -> Unit, enabled: Boolean) {
     val bodyStyle: TextStyle = MaterialTheme.typography.bodyLarge
     val placeholderColor = MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -455,6 +501,7 @@ private fun EditorBody(state: TextFieldState, onFocusChanged: (Boolean) -> Unit)
 
     BasicTextField(
         state = state,
+        enabled = enabled,
         scrollState = scroll,
         onTextLayout = { getResult -> layout = getResult() },
         modifier = Modifier

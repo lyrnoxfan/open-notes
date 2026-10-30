@@ -35,6 +35,10 @@ interface BackupDirectory {
     fun isAuthorized(): Boolean
     suspend fun listBackupFiles(): List<BackupDirectoryEntry>
     suspend fun writeBackup(baseName: String, mimeType: String, bytes: ByteArray): StoredBackupFile
+    suspend fun writeBackupFile(baseName: String, mimeType: String, file: java.io.File): StoredBackupFile {
+        require(file.length() <= BackupLimits.MAX_FILE_BYTES) { "此备份目标未实现流式写入" }
+        return writeBackup(baseName, mimeType, file.readBytes())
+    }
     suspend fun delete(entry: BackupDirectoryEntry)
 }
 
@@ -111,10 +115,15 @@ class SafBackupDirectory(
         entries.sortedByDescending { it.name }
     }
 
-    override suspend fun writeBackup(
+    override suspend fun writeBackup(baseName: String, mimeType: String, bytes: ByteArray): StoredBackupFile {
+        val file = java.io.File.createTempFile("legacy-backup-", ".tmp", appContext.cacheDir)
+        return try { file.writeBytes(bytes); writeBackupFile(baseName, mimeType, file) } finally { file.delete() }
+    }
+
+    override suspend fun writeBackupFile(
         baseName: String,
         mimeType: String,
-        bytes: ByteArray,
+        file: java.io.File,
     ): StoredBackupFile = withContext(Dispatchers.IO) {
         val tree = requireAuthorizedTree()
         val root = rootDocumentUri(tree)
@@ -142,12 +151,12 @@ class SafBackupDirectory(
 
         try {
             resolver.openOutputStream(documentUri, "w")?.use { output ->
-                output.write(bytes)
+                file.inputStream().use { it.copyTo(output) }
                 output.flush()
             } ?: throw storageFailure("Could not open the backup file for writing")
 
-            verifyWritten(documentUri, bytes)
-            StoredBackupFile(name = candidate, sizeBytes = bytes.size.toLong())
+            verifyWrittenFile(documentUri, file)
+            StoredBackupFile(name = candidate, sizeBytes = file.length())
         } catch (e: BackupException) {
             runCatching { DocumentsContract.deleteDocument(resolver, documentUri) }
             throw e
@@ -172,20 +181,11 @@ class SafBackupDirectory(
         }
     }
 
-    private fun verifyWritten(documentUri: Uri, expected: ByteArray) {
-        val digest = MessageDigest.getInstance("SHA-256")
-        var total = 0L
-        resolver.openInputStream(documentUri)?.use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-                total += read
-            }
-        } ?: throw storageFailure("Could not reopen the backup file for verification")
-
-        if (total != expected.size.toLong() || !digest.digest().contentEquals(expected.sha256())) {
+    private fun verifyWrittenFile(documentUri: Uri, expected: java.io.File) {
+        val expectedDigest = expected.inputStream().use { sha256Stream(it) }
+        val actual = resolver.openInputStream(documentUri)?.use { sha256Stream(it) }
+            ?: throw storageFailure("Could not reopen backup for verification")
+        if (actual.first != expected.length() || !actual.second.contentEquals(expectedDigest.second)) {
             throw storageFailure("Backup file did not read back identical; the write was incomplete")
         }
     }

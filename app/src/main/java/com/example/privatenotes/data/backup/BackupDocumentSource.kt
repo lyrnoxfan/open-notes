@@ -23,6 +23,7 @@ data class BackupDocumentInfo(
  */
 interface BackupDocumentSource {
     suspend fun inspect(uri: Uri): BackupDocumentInfo
+    suspend fun open(uri: Uri): java.io.InputStream = java.io.ByteArrayInputStream(read(uri))
     suspend fun read(uri: Uri): ByteArray
 }
 
@@ -70,7 +71,8 @@ class AndroidBackupDocumentSource(context: Context) : BackupDocumentSource {
             displayName = name,
             sizeBytes = size,
             kind = when {
-                BackupCrypto.isEncrypted(head) -> BackupFileKind.ENCRYPTED
+                StreamingMediaArchive.isEncryptedArchive(head) || BackupCrypto.isEncrypted(head) -> BackupFileKind.ENCRYPTED
+                StreamingMediaArchive.isArchive(head) -> BackupFileKind.PLAINTEXT_JSON
                 String(head, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\t', '\r', '\n').startsWith("{") ->
                     BackupFileKind.PLAINTEXT_JSON
                 else -> BackupFileKind.UNKNOWN
@@ -78,25 +80,12 @@ class AndroidBackupDocumentSource(context: Context) : BackupDocumentSource {
         )
     }
 
+    override suspend fun open(uri: Uri): java.io.InputStream = resolver.openInputStream(uri) ?: throw storageFailure("无法打开该文件")
+
     override suspend fun read(uri: Uri): ByteArray = withContext(Dispatchers.IO) {
         try {
             resolver.openInputStream(uri)?.use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var total = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    if (total > BackupLimits.MAX_FILE_BYTES) {
-                        throw BackupException(
-                            BackupErrorKind.INVALID_FORMAT,
-                            "备份文件超过 ${BackupLimits.MAX_FILE_BYTES} 字节，无法导入",
-                        )
-                    }
-                    output.write(buffer, 0, read)
-                }
-                output.toByteArray()
+                readBoundedBackupDocument(input)
             } ?: throw storageFailure("无法打开该文件")
         } catch (e: SecurityException) {
             throw storageFailure("没有读取该文件的权限", e)
@@ -107,4 +96,30 @@ class AndroidBackupDocumentSource(context: Context) : BackupDocumentSource {
 
     private fun storageFailure(message: String, cause: Throwable? = null): BackupException =
         BackupException(BackupErrorKind.STORAGE, message, cause)
+}
+
+
+/** Reads legacy JSON/PNB only up to its explicit safe in-memory import boundary. */
+internal fun readBoundedBackupDocument(
+    input: java.io.InputStream,
+    maxBytes: Long = BackupLimits.MAX_FILE_BYTES,
+): ByteArray {
+    require(maxBytes >= 0) { "maxBytes must be non-negative" }
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0L
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        if (count == 0) continue
+        if (total > maxBytes - count) {
+            throw BackupException(
+                BackupErrorKind.INVALID_FORMAT,
+                "备份文件超过 ${maxBytes} 字节，无法导入",
+            )
+        }
+        output.write(buffer, 0, count)
+        total += count
+    }
+    return output.toByteArray()
 }

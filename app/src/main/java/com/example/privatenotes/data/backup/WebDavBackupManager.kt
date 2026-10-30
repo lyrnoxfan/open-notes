@@ -52,20 +52,20 @@ class WebDavBackupManager(
             val settings = statusStore.webDavSettings()
             WebDavConfigValidator.validate(settings.baseUrl, settings.username, settings.remoteDirectory)
             val credentials = statusStore.webDavCredentials()
-            val archived = archive.create(password)
+            archive.prepare(password).use { archived ->
             val fileName = archived.fileName
             val client = clientFactory(settings, credentials.password)
-            val uploaded = client.upload(
+            val uploaded = client.uploadFile(
                 fileName = fileName,
-                bytes = archived.bytes,
-                contentType = if (archived.encrypted) {
+                file = archived.file,
+                contentType = if (archived.encrypted || archived.fileName.endsWith(".pns")) {
                     "application/octet-stream".toMediaType()
                 } else {
                     "application/json".toMediaType()
                 },
             )
             val verification = try {
-                client.verify(fileName, archived.bytes)
+                client.verifyFile(fileName, archived.file)
             } catch (e: BackupException) {
                 // A remote copy that failed verification is worse than no copy: a later restore
                 // could pick it. Remove only this file, and only after it was just uploaded.
@@ -79,6 +79,7 @@ class WebDavBackupManager(
                 sizeBytes = uploaded.sizeBytes,
                 verification = verification,
             )
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: BackupException) {
@@ -121,6 +122,13 @@ class WebDavBackupManager(
             throw BackupException(BackupErrorKind.INVALID_FORMAT, "远程备份文件过大，拒绝导入")
         }
         return bytes
+    }
+
+    suspend fun downloadTo(fileName: String, file: java.io.File) {
+        if (!isConfigured()) throw BackupException(BackupErrorKind.NOT_CONFIGURED, "WebDAV is not configured")
+        val settings = statusStore.webDavSettings()
+        WebDavConfigValidator.validate(settings.baseUrl, settings.username, settings.remoteDirectory)
+        clientFactory(settings, statusStore.webDavCredentials().password).downloadTo(fileName, file)
     }
 
     private fun resolvePassword(draftPassword: CharArray?): String {

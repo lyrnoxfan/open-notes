@@ -182,7 +182,9 @@ class AppContainer(context: Context) {
     }
 
     private val backupArchiveService: BackupArchiveService by lazy {
-        BackupArchiveService(backupSnapshotReader, backupJson, appVersionProvider)
+        BackupArchiveService(backupSnapshotReader, backupJson, appVersionProvider,
+            streamingProvider = { com.example.privatenotes.data.backup.StreamingMediaArchive(database) },
+            cacheDirectory = { cacheDirectory })
     }
 
     private val backupMerger: BackupMerger by lazy { BackupMerger({ database }, backupJson) }
@@ -228,6 +230,8 @@ class AppContainer(context: Context) {
             archive = backupArchiveService,
             merger = backupMerger,
             localBackupManager = localBackupManager,
+            streamingProvider = { com.example.privatenotes.data.backup.StreamingMediaArchive(database) },
+            stagingDirectory = appContext.cacheDir,
         )
     }
 

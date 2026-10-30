@@ -43,6 +43,7 @@ import kotlin.math.roundToInt
 fun MarkdownText(
     markdown: String,
     modifier: Modifier = Modifier,
+    scrollable: Boolean = true,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -133,28 +134,25 @@ fun MarkdownText(
     AndroidView(
         modifier = modifier,
         factory = { viewContext ->
-            ScrollView(viewContext).apply {
+            val text = TextView(viewContext).apply {
+                layoutParams = android.view.ViewGroup.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+                movementMethod = LinkMovementMethod.getInstance()
+                setTextColor(colors.onBackground.toArgb())
+                includeFontPadding = false
+                typeface = serif
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodyPx)
+            }
+            if (!scrollable) text else ScrollView(viewContext).apply {
                 isFillViewport = true
                 isVerticalScrollBarEnabled = false
-                addView(
-                    TextView(viewContext).apply {
-                        layoutParams = android.view.ViewGroup.LayoutParams(
-                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                        )
-                        // Links have to stay tappable, which rules out setTextIsSelectable: it
-                        // swaps in a movement method that swallows link clicks.
-                        movementMethod = LinkMovementMethod.getInstance()
-                        setTextColor(colors.onBackground.toArgb())
-                        includeFontPadding = false
-                        typeface = serif
-                        setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodyPx)
-                    },
-                )
+                addView(text)
             }
         },
-        update = { scroll ->
-            val textView = scroll.getChildAt(0) as TextView
+        update = { host ->
+            val textView = if (host is ScrollView) host.getChildAt(0) as TextView else host as TextView
             textView.setTextColor(colors.onBackground.toArgb())
             textView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodyPx)
             val metrics = textView.paint.fontMetrics
@@ -162,6 +160,8 @@ fun MarkdownText(
             val extra = (lineHeightPx - intrinsic).coerceAtLeast(0f)
             textView.setLineSpacing(extra, 1f)
             textView.setPadding(0, (extra / 2f).roundToInt(), 0, 0)
+            // Inline blocks use a Compose parent scroller; standalone previews scroll themselves.
+            if (host is ScrollView) host.isFillViewport = true
             // Null until the background parse finishes; the view keeps its previous text rather
             // than flashing empty.
             parsed?.let { textView.text = it }

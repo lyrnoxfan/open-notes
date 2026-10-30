@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import java.io.ByteArrayOutputStream
 import org.junit.Test
 
 class BackupCryptoTest {
@@ -23,6 +24,18 @@ class BackupCryptoTest {
             "ciphertext must not contain the note body",
             String(encrypted, Charsets.ISO_8859_1).contains("private text"),
         )
+    }
+
+    @Test
+    fun `incremental encryption remains readable by legacy PNB decryptor`() {
+        val body = ByteArray(1_000_000) { (it * 31).toByte() }
+        val encrypted = ByteArrayOutputStream().use { out ->
+            BackupCrypto.encryptingOutputStream(out, password, iterations = 10_000).use { it.write(body) }
+            out.toByteArray()
+        }
+
+        assertTrue(BackupCrypto.isEncrypted(encrypted))
+        assertArrayEquals(body, BackupCrypto.decrypt(encrypted, password))
     }
 
     @Test

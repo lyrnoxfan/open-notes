@@ -142,12 +142,44 @@ class MediaIntegrationTest {
         assertFalse(MediaRules.matchesSignature("image/png", "not an image".toByteArray()))
         assertTrue(MediaRules.matchesSignature("video/mp4", byteArrayOf(0,0,0,20) + "ftypisom".toByteArray()))
     }
-    @Test fun countLimitAndDeletedNoteCannotAcceptMedia() = runBlocking {
+    @Test fun moreThanHundredMediaAndDeletedNoteCannotAcceptMedia() = runBlocking {
         val id = notes.createNote("n", "text")
-        repeat(MediaRules.MAX_COUNT) { media.add(id, png("m$it", 8)) }
-        try { media.add(id, png("overflow", 8)); fail("expected limit") } catch (_: IllegalArgumentException) { }
-        assertEquals(10, media.list(id).size)
+        repeat(101) { media.add(id, png("m$it", 8)) }
+        assertEquals(101, media.list(id).size)
+        val snapshot = BackupSnapshotReader(db, clock).read("test")
+        val legacy = json.decode(json.encode(snapshot))
+        assertEquals(101, legacy.notes.single().media.size)
+        db.clearAllTables()
+        BackupMerger(db, json).merge(legacy)
+        assertEquals(101, media.list(id).size)
         notes.moveToTrash(id)
         try { media.add(id, png("deleted", 8)); fail("expected rejection") } catch (_: IllegalStateException) { }
+    }
+    @Test fun inlineBodyEditsSaveReopenAndBackupWithTheSameMedia() = runBlocking {
+        val syntax = com.example.privatenotes.feature.notes.InlineMediaSyntax
+        val id = notes.createNote("图文", "beforeafter")
+        media.add(id, png())
+        val inserted = syntax.insert(notes.findById(id)!!.content, 6, "image")
+        val first = syntax.blocks(inserted).filterIsInstance<com.example.privatenotes.feature.notes.InlineMediaSyntax.Block.Text>().first()
+        val edited = syntax.replaceText(inserted, first.key, "改过的前文\n\n")
+        notes.updateNote(id, "图文", edited)
+        assertEquals(edited, notes.findById(id)!!.content)
+        val encoded = BackupCrypto.encrypt(json.encode(BackupSnapshotReader(db, clock).read("test")), "test-pass".toCharArray())
+        db.clearAllTables()
+        BackupMerger(db, json).merge(json.decode(BackupCrypto.decrypt(encoded, "test-pass".toCharArray())))
+        assertEquals(edited, notes.findById(id)!!.content)
+        assertEquals(setOf("image"), syntax.ids(notes.findById(id)!!.content))
+        assertEquals(png().base64, MediaRules.encode(media.list(id).single(), media.bytes(media.list(id).single())).base64)
+        val without = syntax.remove(edited, "image")
+        media.remove(id, "image")
+        notes.updateNote(id, "图文", without)
+        assertEquals(without, notes.findById(id)!!.content)
+        assertTrue(media.list(id).isEmpty())
+    }
+    @Test fun existingSqliteIntegerColumnPreservesLongLengths() = runBlocking {
+        val id = notes.createNote("large metadata boundary", "")
+        val large = NoteMediaEntity("large", id, "video.mp4", "video/mp4", 3L*1024*1024*1024 + 17, "hash")
+        db.mediaDao().insert(large)
+        assertEquals(large, db.mediaDao().forNote(id).single())
     }
 }

@@ -11,6 +11,7 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.Response
 import java.io.IOException
 import java.io.ByteArrayOutputStream
@@ -31,6 +32,15 @@ interface WebDavRemote {
     suspend fun testConnection()
     suspend fun upload(fileName: String, bytes: ByteArray, contentType: MediaType): WebDavUploadResult
     suspend fun verify(fileName: String, expected: ByteArray): WebDavVerification
+    suspend fun uploadFile(fileName: String, file: java.io.File, contentType: MediaType): WebDavUploadResult {
+        require(file.length() <= BackupLimits.MAX_FILE_BYTES)
+        return upload(fileName, file.readBytes(), contentType)
+    }
+    suspend fun verifyFile(fileName: String, file: java.io.File): WebDavVerification {
+        require(file.length() <= BackupLimits.MAX_FILE_BYTES)
+        return verify(fileName, file.readBytes())
+    }
+    suspend fun downloadTo(fileName: String, file: java.io.File) { file.writeBytes(download(fileName)) }
     suspend fun deleteQuietly(fileName: String)
 
     /** Backup files already in the configured collection, newest name first. */
@@ -74,9 +84,14 @@ class WebDavClient(
         }
     }
 
-    override suspend fun upload(
+    override suspend fun upload(fileName: String, bytes: ByteArray, contentType: MediaType): WebDavUploadResult {
+        val file = java.io.File.createTempFile("webdav-", ".tmp")
+        return try { file.writeBytes(bytes); uploadFile(fileName, file, contentType) } finally { file.delete() }
+    }
+
+    override suspend fun uploadFile(
         fileName: String,
-        bytes: ByteArray,
+        file: java.io.File,
         contentType: MediaType,
     ): WebDavUploadResult {
         requireSafeFileName(fileName)
@@ -84,7 +99,7 @@ class WebDavClient(
         val request = authorized(
             Request.Builder()
                 .url(fileUrl(fileName))
-                .put(bytes.toRequestBody(contentType)),
+                .put(file.asRequestBody(contentType)),
         )
         var response = execute(request)
         if (response.code == HTTP_CONFLICT) {
@@ -98,7 +113,7 @@ class WebDavClient(
         return WebDavUploadResult(
             remoteFileName = fileName,
             directoryUrl = directoryUrl().toString(),
-            sizeBytes = bytes.size.toLong(),
+            sizeBytes = file.length(),
         )
     }
 
@@ -109,6 +124,11 @@ class WebDavClient(
      * catches truncated uploads. The caller only records success after this returns.
      */
     override suspend fun verify(fileName: String, expected: ByteArray): WebDavVerification {
+        val file = java.io.File.createTempFile("webdav-verify-", ".tmp")
+        return try { file.writeBytes(expected); verifyFile(fileName, file) } finally { file.delete() }
+    }
+
+    override suspend fun verifyFile(fileName: String, expected: java.io.File): WebDavVerification {
         requireSafeFileName(fileName)
         val request = authorized(Request.Builder().url(fileUrl(fileName)).get())
         val response = execute(request)
@@ -117,7 +137,7 @@ class WebDavClient(
                 res.code == 200 -> {
                     val body = res.body ?: throw storageFailure("Remote backup has no body")
                     val digest = MessageDigest.getInstance("SHA-256")
-                    var total = 0
+                    var total = 0L
                     try {
                         body.byteStream().use { input ->
                             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -125,7 +145,7 @@ class WebDavClient(
                                 val read = input.read(buffer)
                                 if (read < 0) break
                                 total += read
-                                if (total > expected.size) {
+                                if (total > expected.length()) {
                                     throw storageFailure("Remote backup is larger than the uploaded file")
                                 }
                                 digest.update(buffer, 0, read)
@@ -139,7 +159,7 @@ class WebDavClient(
                             retryable = true,
                         )
                     }
-                    if (total != expected.size || !digest.digest().contentEquals(sha256(expected))) {
+                    if (total != expected.length() || !digest.digest().contentEquals(expected.inputStream().use { sha256Stream(it).second })) {
                         throw storageFailure("Remote backup did not read back identical")
                     }
                     return WebDavVerification.FULL
@@ -147,7 +167,7 @@ class WebDavClient(
 
                 res.code == 405 || res.code == 501 -> {
                     val length = propfindLength(fileName)
-                    if (length == expected.size.toLong()) return WebDavVerification.LENGTH_ONLY
+                    if (length == expected.length()) return WebDavVerification.LENGTH_ONLY
                     throw storageFailure("Remote backup length does not match the uploaded file")
                 }
 
@@ -221,6 +241,21 @@ class WebDavClient(
                 throw BackupException(BackupErrorKind.NETWORK, "Could not read the remote backup", e, retryable = true)
             }
         }
+    }
+
+    override suspend fun downloadTo(fileName: String, file: java.io.File) {
+        requireSafeFileName(fileName)
+        try {
+            execute(authorized(Request.Builder().url(fileUrl(fileName)).get())).use { response ->
+                if (!response.isSuccessful) throw statusFailure(response.code, "download backup")
+                val body = response.body ?: throw storageFailure("WebDAV returned an empty file")
+                val length = body.contentLength()
+                body.byteStream().use { input -> file.outputStream().use { output ->
+                    val total = input.copyTo(output)
+                    if (length >= 0 && total != length) throw storageFailure("Remote backup was truncated")
+                } }
+            }
+        } catch (failure: Throwable) { file.delete(); throw failure }
     }
 
     private suspend fun propfind(url: HttpUrl, depth: Int = 0): Response {
@@ -484,4 +519,19 @@ internal fun readBackupBytes(input: InputStream, maxBytes: Long = BackupLimits.M
         output.write(buffer, 0, count)
     }
     return output.toByteArray()
+}
+
+/** Bounded-memory length/digest used by disk-backed SAF and HTTPS backup transports. */
+internal fun sha256Stream(input: InputStream): Pair<Long, ByteArray> {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val buffer = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        if (count == 0) continue
+        total = Math.addExact(total, count.toLong())
+        digest.update(buffer, 0, count)
+    }
+    return total to digest.digest()
 }

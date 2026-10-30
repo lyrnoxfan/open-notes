@@ -1,6 +1,7 @@
 package com.example.privatenotes.data.media
 
 import androidx.room.*
+import android.database.Cursor
 import com.example.privatenotes.data.local.NoteEntity
 import kotlinx.serialization.Serializable
 import java.io.InputStream
@@ -12,7 +13,10 @@ import java.util.Base64
     parentColumns = ["id"], childColumns = ["noteId"], onDelete = ForeignKey.CASCADE)],
     indices = [Index("noteId")])
 data class NoteMediaEntity(@PrimaryKey val id: String, val noteId: String,
-    val name: String, val mime: String, val size: Int, val sha256: String)
+    val name: String, val mime: String, val size: Long, val sha256: String) {
+    @Ignore constructor(id: String, noteId: String, name: String, mime: String, size: Int, sha256: String) :
+        this(id, noteId, name, mime, size.toLong(), sha256)
+}
 
 // Never put a video in one CursorWindow: all payload rows are at most 256 KiB.
 @Entity(tableName = "media_chunks", primaryKeys = ["mediaId", "position"],
@@ -28,6 +32,9 @@ interface MediaDao {
     suspend fun all(): List<NoteMediaEntity>
     @Query("SELECT * FROM media_chunks WHERE mediaId = :id ORDER BY position")
     suspend fun chunks(id: String): List<MediaChunkEntity>
+    /** Cursor keeps legacy JSON export bounded to one database chunk at a time. */
+    @Query("SELECT position, bytes FROM media_chunks WHERE mediaId = :id ORDER BY position")
+    fun chunkCursor(id: String): Cursor
     @Query("SELECT * FROM media_chunks WHERE mediaId = :id AND position = :position")
     fun chunk(id: String, position: Int): MediaChunkEntity?
     @Update suspend fun update(media: NoteMediaEntity)
@@ -40,15 +47,30 @@ interface MediaDao {
 }
 
 @Serializable
-data class BackupMedia(val id: String, val name: String, val mime: String, val size: Int,
-    val sha256: String, val base64: String)
+data class BackupMedia(val id: String, val name: String, val mime: String, val size: Long,
+    val sha256: String, val base64: String) {
+    constructor(id: String, name: String, mime: String, size: Int, sha256: String, base64: String) :
+        this(id, name, mime, size.toLong(), sha256, base64)
+}
 
 object MediaRules {
     const val CHUNK_SIZE = 256 * 1024
     const val LEGACY_MAX_BYTES = 8 * 1024 * 1024
-    const val MAX_BYTES = 256 * 1024 * 1024
-    const val MAX_NOTE_BYTES = 512 * 1024 * 1024
-    const val MAX_COUNT = 10
+    // Structural limit of the existing Int chunk-position key, not an upload quota.
+    const val MAX_BYTES = CHUNK_SIZE.toLong() * Int.MAX_VALUE
+    fun chunkCount(size: Long): Int {
+        require(size in 1..MAX_BYTES) { "无效媒体长度" }
+        return ((size - 1) / CHUNK_SIZE + 1).toInt()
+    }
+    fun chunkBytes(size: Long, index: Int): Int {
+        require(index >= 0 && index < chunkCount(size)) { "无效媒体分块" }
+        return minOf(CHUNK_SIZE.toLong(), size - index.toLong() * CHUNK_SIZE).toInt()
+    }
+    const val MAX_NOTE_BYTES = MAX_BYTES
+    fun noteBytes(sizes: Iterable<Long>): Long = sizes.fold(0L) { sum, size ->
+        require(size in 1..MAX_BYTES && size <= MAX_NOTE_BYTES - sum) { "媒体长度超出当前分块格式的可表示范围" }
+        sum + size
+    }
     val MIME_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm", "video/3gpp")
     fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it) }
@@ -70,7 +92,7 @@ object MediaRules {
         require(media.mime in MIME_TYPES) { "不支持的图片或视频格式" }
         require(media.size in 1..LEGACY_MAX_BYTES && media.base64.length <= (LEGACY_MAX_BYTES + 2) / 3 * 4) { "附件过大或为空" }
         val bytes = Base64.getDecoder().decode(media.base64)
-        require(bytes.size == media.size && digest(bytes) == media.sha256) { "附件校验失败" }
+        require(bytes.size.toLong() == media.size && digest(bytes) == media.sha256) { "附件校验失败" }
         require(matchesSignature(media.mime, bytes)) { "附件内容与格式不符" }
         return bytes
     }
@@ -92,13 +114,13 @@ object MediaRules {
     suspend fun read(dao: MediaDao, media: NoteMediaEntity): ByteArray {
         require(media.size in 1..LEGACY_MAX_BYTES) { "大视频必须通过流式接口读取" }
         val chunks = dao.chunks(media.id)
-        require(media.size in 1..LEGACY_MAX_BYTES && chunks.size == (media.size + CHUNK_SIZE - 1) / CHUNK_SIZE) { "附件大小损坏" }
+        require(media.size in 1..LEGACY_MAX_BYTES && chunks.size == chunkCount(media.size)) { "附件大小损坏" }
         require(chunks.map { it.position } == chunks.indices.toList()) { "附件分块损坏" }
         require(chunks.withIndex().all { (index, chunk) ->
-            chunk.bytes.size == minOf(CHUNK_SIZE, media.size - index * CHUNK_SIZE)
+            chunk.bytes.size == chunkBytes(media.size, index)
         }) { "附件分块长度损坏" }
         val bytes = ByteArrayOutputStream().apply { chunks.forEach { write(it.bytes) } }.toByteArray()
-        require(bytes.size == media.size && digest(bytes) == media.sha256) { "附件已损坏" }
+        require(bytes.size.toLong() == media.size && digest(bytes) == media.sha256) { "附件已损坏" }
         return bytes
     }
     suspend fun insert(dao: MediaDao, noteId: String, media: BackupMedia) {

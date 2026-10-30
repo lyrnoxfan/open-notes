@@ -14,20 +14,24 @@ import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 
-/** Versioned, password-only, bounded-memory media archive. No plaintext staging file. */
+/** Versioned bounded-memory media archive. PNMEDIA3 is authenticated/encrypted;
+ * PNPLAIN3 is an explicitly unencrypted backup. Neither embeds media in Base64. */
 class StreamingMediaArchive(private val database: AppDatabase) {
     companion object {
         private val MAGIC = "PNMEDIA3".toByteArray(Charsets.US_ASCII)
+        private val PLAIN_MAGIC = "PNPLAIN3".toByteArray(Charsets.US_ASCII)
+        fun isArchive(head: ByteArray): Boolean = head.take(8).toByteArray().let { it.contentEquals(MAGIC) || it.contentEquals(PLAIN_MAGIC) }
+        fun isEncryptedArchive(head: ByteArray): Boolean = head.take(8).toByteArray().contentEquals(MAGIC)
         private const val MAX_METADATA = 16 * 1024 * 1024
-        private const val MAX_TOTAL = 2L * 1024 * 1024 * 1024
+        private const val MAX_TOTAL = Long.MAX_VALUE
         private val END = "END-PNMEDIA3".toByteArray()
     }
     suspend fun write(output: OutputStream, password: CharArray, appVersion: String, now: Long) {
-        require(password.size >= 8) { "加密备份密码至少 8 个字符" }
+        require(password.isEmpty() || password.size >= 8) { "加密备份密码至少 8 个字符" }
         database.withTransaction {
             val dao = database.backupDao()
             val media = database.mediaDao().all().sortedBy { it.id }
-            require(media.sumOf { it.size.toLong() } <= MAX_TOTAL) { "流式备份媒体总量最多 2 GiB" }
+            require(media.fold(0L) { sum, item -> Math.addExact(sum, item.size) } <= MAX_TOTAL) { "备份媒体总量超出可表示范围" }
             val byNote = media.groupBy { it.noteId }
             val snapshot = BackupSnapshot(dao.allNotes(), dao.allTags(), dao.allNoteTags(), dao.allDeletionMarkers())
             val doc = snapshot.toDocument(now, appVersion).let { d -> d.copy(notes = d.notes.map { n ->
@@ -41,10 +45,10 @@ class StreamingMediaArchive(private val database: AppDatabase) {
             metadata.asListChunks { writer.write(it) }
             for (note in doc.notes) for (m in note.media) {
                 val hash = MessageDigest.getInstance("SHA-256")
-                repeat((m.size + MediaRules.CHUNK_SIZE - 1) / MediaRules.CHUNK_SIZE) { index ->
+                repeat(MediaRules.chunkCount(m.size)) { index ->
                     currentCoroutineContext().ensureActive()
                     val bytes = database.mediaDao().chunk(m.id, index)?.bytes ?: error("附件分块缺失")
-                    require(bytes.size == minOf(MediaRules.CHUNK_SIZE, m.size - index * MediaRules.CHUNK_SIZE))
+                    require(bytes.size == MediaRules.chunkBytes(m.size, index))
                     hash.update(bytes); writer.write(bytes)
                 }
                 check(hex(hash.digest()) == m.sha256) { "附件校验失败，未完成备份" }
@@ -79,10 +83,10 @@ class StreamingMediaArchive(private val database: AppDatabase) {
             val keep = note.id in winners
             if (keep) database.mediaDao().insert(NoteMediaEntity(m.id, note.id, m.name, m.mime, m.size, m.sha256))
             val hash = MessageDigest.getInstance("SHA-256")
-            repeat((m.size + MediaRules.CHUNK_SIZE - 1) / MediaRules.CHUNK_SIZE) { index ->
+            repeat(MediaRules.chunkCount(m.size)) { index ->
                 currentCoroutineContext().ensureActive()
                 val bytes = reader.read()
-                require(bytes.size == minOf(MediaRules.CHUNK_SIZE, m.size - index * MediaRules.CHUNK_SIZE))
+                require(bytes.size == MediaRules.chunkBytes(m.size, index))
                 if (index == 0) require(MediaRules.matchesSignature(m.mime, bytes))
                 hash.update(bytes)
                 if (keep) database.mediaDao().insertChunks(listOf(MediaChunkEntity(m.id, index, bytes)))
@@ -99,14 +103,13 @@ class StreamingMediaArchive(private val database: AppDatabase) {
         val ids = HashSet<String>()
         var total = 0L
         for (note in doc.notes) {
-            require(note.media.size <= MediaRules.MAX_COUNT)
-            require(note.media.sumOf { it.size.toLong() } <= MediaRules.MAX_NOTE_BYTES)
+            require(note.media.fold(0L) { sum, item -> Math.addExact(sum, item.size) } <= MediaRules.MAX_NOTE_BYTES)
             for (m in note.media) {
                 require(m.id.matches(Regex("[A-Za-z0-9_-]{1,100}")) && ids.add(m.id))
                 require(m.base64.isEmpty() && m.name.isNotBlank() && m.name.length <= 200)
                 require(m.mime in MediaRules.MIME_TYPES && m.sha256.matches(Regex("[0-9a-f]{64}")))
-                require(m.size in 1..if (m.mime.startsWith("video/")) MediaRules.MAX_BYTES else MediaRules.LEGACY_MAX_BYTES)
-                total += m.size
+                require(m.size in 1..MediaRules.MAX_BYTES)
+                total = Math.addExact(total, m.size)
                 require(total <= MAX_TOTAL)
             }
         }
@@ -127,12 +130,13 @@ class StreamingMediaArchive(private val database: AppDatabase) {
         private val data = DataOutputStream(out)
         private val salt = ByteArray(16).also(SecureRandom()::nextBytes)
         private val prefix = ByteArray(4).also(SecureRandom()::nextBytes)
-        private val header = MAGIC + salt + prefix
-        private val key = key(password, salt)
+        private val header = (if (password.isEmpty()) PLAIN_MAGIC else MAGIC) + salt + prefix
+        private val key = if (password.isEmpty()) null else key(password, salt)
         private var index = 0L
         init { data.write(header) }
         fun write(bytes: ByteArray) {
             require(bytes.size in 1..MediaRules.CHUNK_SIZE)
+            if (key == null) { data.writeInt(bytes.size); data.write(bytes); return }
             val nonce = java.nio.ByteBuffer.allocate(12).put(prefix).putLong(index).array()
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, nonce))
@@ -144,16 +148,24 @@ class StreamingMediaArchive(private val database: AppDatabase) {
     private inner class RecordReader(input: InputStream, password: CharArray) {
         private val data = DataInputStream(input)
         private val header = ByteArray(MAGIC.size + 20).also(data::readFully)
-        private val key: SecretKeySpec
+        private val key: SecretKeySpec?
         private val prefix: ByteArray
         private var index = 0L
         init {
-            require(header.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) { "不是大媒体加密备份" }
-            key = key(password, header.copyOfRange(MAGIC.size, MAGIC.size + 16))
+            require(isArchive(header)) { "不是流式媒体备份" }
+            key = if (isEncryptedArchive(header)) {
+                require(password.isNotEmpty()) { "此备份需要密码" }
+                key(password, header.copyOfRange(MAGIC.size, MAGIC.size + 16))
+            } else null
             prefix = header.copyOfRange(MAGIC.size + 16, header.size)
         }
         fun read(): ByteArray {
-            val size = data.readInt(); require(size in 17..MediaRules.CHUNK_SIZE + 16)
+            val size = data.readInt()
+            if (key == null) {
+                require(size in 1..MediaRules.CHUNK_SIZE)
+                return ByteArray(size).also(data::readFully)
+            }
+            require(size in 17..MediaRules.CHUNK_SIZE + 16)
             val encrypted = ByteArray(size).also(data::readFully)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128,

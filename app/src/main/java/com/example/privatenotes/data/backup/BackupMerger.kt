@@ -7,6 +7,11 @@ import com.example.privatenotes.data.local.NoteEntity
 import com.example.privatenotes.data.local.NoteTagCrossRef
 import com.example.privatenotes.data.local.TagEntity
 import java.util.Locale
+import java.io.FileInputStream
+import java.security.MessageDigest
+import com.example.privatenotes.data.media.MediaChunkEntity
+import com.example.privatenotes.data.media.NoteMediaEntity
+import com.example.privatenotes.data.media.MediaRules
 
 /**
  * What happened during a merge. Counts only; note bodies never leave the database to reach a
@@ -58,6 +63,46 @@ class BackupMerger(
 ) {
 
     constructor(database: AppDatabase, json: BackupJson) : this({ database }, json)
+
+    /** Imports validated, disk-staged legacy media without materializing Base64 in memory. */
+    internal suspend fun mergeStaged(staged: LegacyJsonMediaStager.StagedDocument): MergeReport {
+        val backup = staged.document
+        json.validateStagedMetadata(backup)
+        val metas = backup.notes.flatMap { it.media }
+        if (metas.size != staged.media.size) throw BackupException(BackupErrorKind.INVALID_FORMAT, "Legacy media staging mismatch")
+        val payloadById = metas.zip(staged.media).associate { (meta, payload) -> meta.id to (meta to payload) }
+        val database = databaseProvider()
+        return database.withTransaction {
+            val dao = database.backupDao()
+            val plan = MergePlanner.plan(dao.allNotes(), dao.allTags(), dao.allNoteTags(), dao.allDeletionMarkers(), backup,
+                localMedia = database.mediaDao().all().groupBy { it.noteId })
+            applyMergePlan(database, plan, backup, restoreMedia = false)
+            for (note in plan.notesToUpsert.filter { backup.schemaVersion >= 2 }) {
+                database.mediaDao().clear(note.id)
+                val sourceNote = backup.notes.firstOrNull { it.id == note.id } ?: continue
+                for (media in sourceNote.media) {
+                    val (meta, payload) = payloadById[media.id] ?: throw BackupException(BackupErrorKind.INVALID_FORMAT, "Missing staged media")
+                    val entity = NoteMediaEntity(meta.id, note.id, meta.name, meta.mime, meta.size, meta.sha256)
+                    database.mediaDao().insert(entity)
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    var position = 0; var total = 0L
+                    FileInputStream(payload.file).use { input ->
+                        val buffer = ByteArray(MediaRules.CHUNK_SIZE)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            if (n == 0) continue
+                            total += n; digest.update(buffer, 0, n)
+                            database.mediaDao().insertChunks(listOf(MediaChunkEntity(meta.id, position++, buffer.copyOf(n))))
+                        }
+                    }
+                    val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                    if (total != meta.size || hash != meta.sha256) throw BackupException(BackupErrorKind.INVALID_FORMAT, "Staged media changed during import")
+                }
+            }
+            plan.report
+        }
+    }
 
     suspend fun merge(backup: BackupDocument): MergeReport {
         json.validate(backup)
