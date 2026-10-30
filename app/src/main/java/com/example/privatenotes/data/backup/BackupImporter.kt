@@ -2,6 +2,7 @@ package com.example.privatenotes.data.backup
 
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.SerializationException
 import java.io.File
 import java.io.FileInputStream
 
@@ -43,8 +44,23 @@ class BackupImporter(
                 source.open(uri).use { encrypted -> BackupCrypto.decryptToTemporaryFile(encrypted, secret, temp) }
                 FileInputStream(temp)
             } else source.open(uri)
-            try { jsonInput.use { LegacyJsonMediaStager().stage(it, BackupJson(), stagingDirectory) } }
-            finally { encryptedJsonTemp?.delete(); encryptedJsonTemp = null }
+            try {
+                jsonInput.use { input ->
+                    try {
+                        LegacyJsonMediaStager().stage(input, BackupJson(), stagingDirectory)
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (failure: BackupException) {
+                        throw failure
+                    } catch (failure: IllegalStateException) {
+                        throw BackupException(BackupErrorKind.INVALID_FORMAT, "Backup JSON is malformed", failure)
+                    } catch (failure: SerializationException) {
+                        throw BackupException(BackupErrorKind.INVALID_FORMAT, "Backup JSON is malformed", failure)
+                    } catch (failure: IllegalArgumentException) {
+                        throw BackupException(BackupErrorKind.INVALID_FORMAT, "Backup JSON is malformed", failure)
+                    }
+                }
+            } finally { encryptedJsonTemp?.delete(); encryptedJsonTemp = null }
         }
 
         val safetyBackup = try { if (localBackupManager.isConfigured()) {

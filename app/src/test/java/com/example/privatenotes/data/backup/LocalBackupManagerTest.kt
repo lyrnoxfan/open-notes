@@ -123,17 +123,26 @@ class LocalBackupManagerTest {
         org.junit.Assert.assertArrayEquals(bytes, com.example.privatenotes.data.media.MediaRules.validate(attachment))
         assertEquals(now, statusStore.status.value.localLastSuccessAt)
     }
-    @Test fun `oversize media fails automatic backup without file pruning or false success`() = runBlocking {
+    @Test fun `automatic backup streams media larger than the former eight MiB limit`() = runBlocking {
         statusStore.markLocalSuccess(123L)
-        directory.files["private-notes-older.json"] = byteArrayOf(1, 2)
-        seedBackupMedia(database, context, 9*1024*1024)
-        val error = runCatching { manager.backup() }.exceptionOrNull() as BackupException
-        assertEquals(BackupErrorKind.STORAGE, error.kind)
-        assertTrue(error.message!!.contains("大媒体加密备份"))
-        assertEquals(listOf("private-notes-older.json"), directory.files.keys.toList())
+        val (id, mediaBytes) = seedBackupMedia(database, context, 9 * 1024 * 1024)
+
+        val result = manager.backup()
+        val backupBytes = directory.files.getValue(result.fileName)
+        val staging = java.nio.file.Files.createTempDirectory("large-local-backup-test").toFile()
+        try {
+            LegacyJsonMediaStager().stage(backupBytes.inputStream(), BackupJson(), staging).use { staged ->
+                val note = staged.document.notes.single { it.id == id }
+                assertEquals(mediaBytes.size.toLong(), note.media.single().size)
+                assertEquals(mediaBytes.size.toLong(), staged.media.single().decodedBytes)
+            }
+        } finally {
+            staging.deleteRecursively()
+        }
+        assertTrue(backupBytes.size > mediaBytes.size)
         assertTrue(directory.deleted.isEmpty())
-        assertEquals(123L, statusStore.status.value.localLastSuccessAt)
-        assertTrue(statusStore.status.value.localLastFailure!!.detail!!.contains("大媒体加密备份"))
+        assertEquals(now, statusStore.status.value.localLastSuccessAt)
+        assertEquals(null, statusStore.status.value.localLastFailure)
     }
 
 }

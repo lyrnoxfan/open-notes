@@ -12,6 +12,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -177,16 +178,28 @@ class WebDavBackupManagerTest {
         org.junit.Assert.assertArrayEquals(bytes, com.example.privatenotes.data.media.MediaRules.validate(doc.notes.single { it.id == id }.media.single()))
         assertEquals(now, statusStore.status.value.remoteLastSuccessAt)
     }
-    @Test fun `oversize media fails webdav before upload without false success`() = runBlocking {
+    @Test fun `webdav backup streams media larger than the former eight MiB limit`() = runBlocking {
         statusStore.markRemoteSuccess(123L)
-        seedBackupMedia(database, context, 9*1024*1024)
-        val error = runCatching { manager.backup() }.exceptionOrNull() as BackupException
-        assertEquals(BackupErrorKind.STORAGE, error.kind)
-        assertTrue(error.message!!.contains("大媒体加密备份"))
-        assertNull(remote.uploadedBytes)
+        val (id, mediaBytes) = seedBackupMedia(database, context, 9 * 1024 * 1024)
+
+        val result = manager.backup()
+        val uploaded = remote.uploadedBytes ?: error("backup should have been uploaded")
+        val staging = java.nio.file.Files.createTempDirectory("large-webdav-backup-test").toFile()
+        try {
+            LegacyJsonMediaStager().stage(uploaded.inputStream(), BackupJson(), staging).use { staged ->
+                val note = staged.document.notes.single { it.id == id }
+                assertEquals(mediaBytes.size.toLong(), note.media.single().size)
+                assertEquals(mediaBytes.size.toLong(), staged.media.single().decodedBytes)
+            }
+        } finally {
+            staging.deleteRecursively()
+        }
+        assertTrue(uploaded.size > mediaBytes.size)
+        assertEquals(WebDavVerification.FULL, result.verification)
+        assertNotNull(remote.verifiedFileName)
         assertFalse(remote.deleted)
-        assertEquals(123L, statusStore.status.value.remoteLastSuccessAt)
-        assertTrue(statusStore.status.value.remoteLastFailure!!.detail!!.contains("大媒体加密备份"))
+        assertEquals(now, statusStore.status.value.remoteLastSuccessAt)
+        assertNull(statusStore.status.value.remoteLastFailure)
     }
 
 }

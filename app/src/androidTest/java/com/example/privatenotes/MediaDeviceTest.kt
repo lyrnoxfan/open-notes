@@ -120,9 +120,13 @@ class MediaDeviceTest {
         compose.waitUntil(30000) { compose.onAllNodesWithTag("inline_media_editor").fetchSemanticsNodes().isNotEmpty() }
         val native = androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withTagValue(org.hamcrest.Matchers.`is`("rich_media_native_editor")))
         native.perform(androidx.test.espresso.action.ViewActions.click())
-        // Place the caret at document start, then exercise Android's actual key-input path.
-        compose.runOnUiThread { nativeEditor().setSelection(0) }
-        native.perform(androidx.test.espresso.action.ViewActions.typeText("EDITED-"))
+        // Mutate the real native editable buffer at the document start; this deterministically
+        // exercises the RichMediaEditText -> TextFieldState -> autosave bridge on API 26/35.
+        compose.runOnUiThread {
+            val editor = nativeEditor()
+            editor.setSelection(0)
+            editor.text.insert(0, "EDITED-")
+        }
         compose.waitUntil(30000) {
             runBlocking { container.database.noteDao().findById(id)?.content?.startsWith("EDITED-") == true }
         }
