@@ -118,8 +118,12 @@ class MediaDeviceTest {
         compose.waitUntil(10000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("note_row_$id").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("inline_media_editor").fetchSemanticsNodes().isNotEmpty() }
+        // The device suite uses a real native-view click. Wait for the app window itself to own
+        // focus first; a sleeping headless emulator can leave Espresso looking at a stale system root.
+        compose.waitUntil(10_000) { compose.activity.window.decorView.hasWindowFocus() }
         val native = androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withTagValue(org.hamcrest.Matchers.`is`("rich_media_native_editor")))
         native.perform(androidx.test.espresso.action.ViewActions.click())
+        compose.waitUntil(5_000) { compose.runOnIdle { nativeEditor().hasFocus() } }
         // Mutate the real native editable buffer at the document start; this deterministically
         // exercises the RichMediaEditText -> TextFieldState -> autosave bridge on API 26/35.
         compose.runOnUiThread {

@@ -75,7 +75,7 @@ class LongDocumentEditorTest {
         hideKeyboard()
         compose.onNodeWithContentDescription(compose.activity.getString(com.example.privatenotes.R.string.editor_back)).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText(documentTitle).performClick()
+        compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
         compose.waitUntil(15_000) { runCatching { text() == edited }.getOrDefault(false) }
         Log.i("LongDocument", "long press selected row 100; edited content survived save/reopen")
     }
@@ -106,7 +106,7 @@ class LongDocumentEditorTest {
                 hideKeyboard()
                 compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
                 compose.waitForIdle()
-                compose.onNodeWithText(documentTitle).performClick()
+                compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
                 compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
                 Log.i("LongDocument", "PASS row $line entry $entry: first/second IME and exact content after list re-entry")
             }
@@ -146,7 +146,7 @@ class LongDocumentEditorTest {
         }
         val id = runBlocking { container.noteRepository.createNote(documentTitle, document) }
         compose.waitForIdle()
-        compose.onNodeWithText(documentTitle).performClick()
+        compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
         compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
         Log.i("LongDocument", "opened id=$id, 100 distinguishable lines")
     }
@@ -250,6 +250,7 @@ class LongDocumentEditorTest {
                 // a glyph at x=0 may not receive a physical hit if the pointer falls on its edge.
                 val localX = origin.x + glyph.left + (glyph.width * .5f).coerceAtLeast(1f) - bounds.left
                 Log.i("LongDocument", "BEFORE IME line=$line offset=${visibleGlyph.first} origin=$origin viewport=$bounds tap=($localX,$localY) glyph=$glyph")
+                compose.waitUntil(10_000) { compose.activity.window.decorView.hasWindowFocus() }
                 val frames = watchFirstImeFrames(line, target, bounds.top)
                 field().performTouchInput { click(Offset(localX, localY)) }
                 waitForKeyboard(true)
