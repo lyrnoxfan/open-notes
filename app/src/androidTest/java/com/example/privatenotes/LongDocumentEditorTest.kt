@@ -75,8 +75,7 @@ class LongDocumentEditorTest {
         hideKeyboard()
         compose.onNodeWithContentDescription(compose.activity.getString(com.example.privatenotes.R.string.editor_back)).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
-        compose.waitUntil(15_000) { runCatching { text() == edited }.getOrDefault(false) }
+        openDocumentFromList(edited)
         Log.i("LongDocument", "long press selected row 100; edited content survived save/reopen")
     }
 
@@ -106,8 +105,7 @@ class LongDocumentEditorTest {
                 hideKeyboard()
                 compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
                 compose.waitForIdle()
-                compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
-                compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
+                openDocumentFromList(document)
                 Log.i("LongDocument", "PASS row $line entry $entry: first/second IME and exact content after list re-entry")
             }
         }
@@ -146,9 +144,18 @@ class LongDocumentEditorTest {
         }
         val id = runBlocking { container.noteRepository.createNote(documentTitle, document) }
         compose.waitForIdle()
-        compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
-        compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
+        openDocumentFromList(document)
         Log.i("LongDocument", "opened id=$id, 100 distinguishable lines")
+    }
+
+    /** Await Room -> Flow -> Compose list propagation before asking Espresso to click the row. */
+    private fun openDocumentFromList(expectedContent: String) {
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithText(documentTitle, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
+        compose.waitUntil(15_000) { runCatching { text() == expectedContent }.getOrDefault(false) }
     }
 
     private fun layout(): TextLayoutResult {
