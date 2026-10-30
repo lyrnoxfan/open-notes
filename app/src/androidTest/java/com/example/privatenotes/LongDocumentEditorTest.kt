@@ -169,7 +169,13 @@ class LongDocumentEditorTest {
         compose.waitUntil(15_000) {
             compose.onAllNodesWithTag(rowTag).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag(rowTag).performTouchInput { click(center) }
+        // Opening a note is not the pointer-hit-testing behavior under test (the body taps
+        // above remain physical). Use its semantic click action so small/large-font API 26
+        // list rows cannot miss the handler when their center is clipped by the viewport.
+        compose.onNodeWithTag(rowTag).assertIsDisplayed().performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.waitUntil(15_000) { runCatching { text() == expectedContent }.getOrDefault(false) }
     }
 
