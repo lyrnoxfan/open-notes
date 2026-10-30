@@ -1,10 +1,12 @@
 package com.example.privatenotes.feature.notes
 
+import androidx.lifecycle.viewModelScope
 import com.example.privatenotes.data.FakeNoteSettings
 import com.example.privatenotes.data.repository.FakeNoteRepository
 import com.example.privatenotes.data.repository.FakeTagRepository
 import com.example.privatenotes.data.repository.TimeSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -371,6 +373,27 @@ class NoteEditorViewModelTest {
         assertEquals(1, tagRepository.attachments.value.size)
         assertEquals(noteId, tagRepository.attachments.value.single().noteId)
         assertTrue(viewModel.uiState.value.pendingTags.isEmpty())
+    }
+
+    @Test
+    fun `adding a tag to an existing note survives editor ViewModel clearing`() = runTest(mainDispatcher) {
+        val repository = FakeNoteRepository()
+        val noteId = repository.createNote("title", "body")
+        val tagRepository = FakeTagRepository()
+        val viewModel = viewModel(repository, tagRepository, noteId = noteId)
+        runCurrent()
+
+        viewModel.addTag("持久标签")
+        // Canceling the editor scope models navigation while its write is still queued.
+        viewModel.viewModelScope.cancel()
+        runCurrent()
+
+        val tag = tagRepository.tags.value.single()
+        assertEquals("持久标签", tag.name)
+        assertEquals(
+            listOf(FakeTagRepository.Attachment(noteId, tag.id)),
+            tagRepository.attachments.value,
+        )
     }
 
     @Test

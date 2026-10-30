@@ -294,7 +294,9 @@ class NoteEditorViewModel(
             _uiState.update { it.copy(pendingTags = it.pendingTags + name) }
             return
         }
-        viewModelScope.launch {
+        // Tag writes are durable user actions. Like the final note save, they must survive
+        // leaving the editor and clearing this ViewModel before the repository write completes.
+        externalScope.launch {
             val tagId = runCatching { tagRepository.ensureTag(name) }.getOrNull() ?: return@launch
             runCatching { tagRepository.attachTag(id, tagId) }
         }
@@ -307,7 +309,8 @@ class NoteEditorViewModel(
             return
         }
         val noteId = noteId ?: return
-        viewModelScope.launch {
+        // Removing a tag is also a durable mutation and may finish after navigation.
+        externalScope.launch {
             runCatching { tagRepository.detachTag(noteId, id) }
         }
     }
