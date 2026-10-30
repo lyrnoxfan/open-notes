@@ -43,7 +43,7 @@ class LongDocumentEditorTest {
     private val document = (1..100).joinToString("\n") { "第%03d行 记录 abc 中文".format(it) }
 
     @Test fun scrollThenTapAndEditBeyondFirstViewport() {
-        openDocument()
+        val noteId = openDocument()
         for (line in listOf(31, 60, 100, 5)) {
             val offset = scrollToAndTapLine(line)
             assertEquals("tap must address line $line, not a first-screen coordinate", offset, selection().start)
@@ -75,13 +75,13 @@ class LongDocumentEditorTest {
         hideKeyboard()
         compose.onNodeWithContentDescription(compose.activity.getString(com.example.privatenotes.R.string.editor_back)).performClick()
         compose.waitForIdle()
-        openDocumentFromList(edited)
+        openDocumentFromList(noteId, edited)
         Log.i("LongDocument", "long press selected row 100; edited content survived save/reopen")
         returnToNotesList()
     }
 
     @Test fun firstImeAfterEachListEntryKeepsTheTappedLongDocumentLine() {
-        openDocument()
+        val noteId = openDocument()
         for (line in listOf(31, 60, 100)) {
             for (entry in 1..3) {
                 // Re-enter from the list every time: hiding the keyboard is not a new entry.
@@ -106,7 +106,7 @@ class LongDocumentEditorTest {
                 hideKeyboard()
                 compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
                 compose.waitForIdle()
-                openDocumentFromList(document)
+                openDocumentFromList(noteId, document)
                 Log.i("LongDocument", "PASS row $line entry $entry: first/second IME and exact content after list re-entry")
             }
         }
@@ -133,7 +133,7 @@ class LongDocumentEditorTest {
 
     private val documentTitle = "长文滚动验收-${java.util.UUID.randomUUID()}"
 
-    private fun openDocument() {
+    private fun openDocument(): String {
         // Compose keeps the same activity/navigation host between test methods. The preceding
         // long-document test intentionally ends with its note open, so always return to the list
         // before creating and opening this test's own document.
@@ -146,8 +146,9 @@ class LongDocumentEditorTest {
         }
         val id = runBlocking { container.noteRepository.createNote(documentTitle, document) }
         compose.waitForIdle()
-        openDocumentFromList(document)
+        openDocumentFromList(id, document)
         Log.i("LongDocument", "opened id=$id, 100 distinguishable lines")
+        return id
     }
 
     /** Each JUnit method starts and ends at the list, so editor NavBackStackEntries and IME
@@ -162,13 +163,13 @@ class LongDocumentEditorTest {
         }
     }
 
-    /** Await Room -> Flow -> Compose list propagation before asking Espresso to click the row. */
-    private fun openDocumentFromList(expectedContent: String) {
+    /** Await Room -> Flow -> Compose list propagation, then physically tap this note's full row. */
+    private fun openDocumentFromList(noteId: String, expectedContent: String) {
+        val rowTag = "note_row_$noteId"
         compose.waitUntil(15_000) {
-            compose.onAllNodesWithText(documentTitle, useUnmergedTree = true)
-                .fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag(rowTag).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithText(documentTitle, useUnmergedTree = true).performClick()
+        compose.onNodeWithTag(rowTag).performTouchInput { click(center) }
         compose.waitUntil(15_000) { runCatching { text() == expectedContent }.getOrDefault(false) }
     }
 
