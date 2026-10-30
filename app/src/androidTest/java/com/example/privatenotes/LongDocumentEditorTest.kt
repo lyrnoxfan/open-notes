@@ -77,6 +77,7 @@ class LongDocumentEditorTest {
         compose.waitForIdle()
         openDocumentFromList(edited)
         Log.i("LongDocument", "long press selected row 100; edited content survived save/reopen")
+        returnToNotesList()
     }
 
     @Test fun firstImeAfterEachListEntryKeepsTheTappedLongDocumentLine() {
@@ -109,6 +110,7 @@ class LongDocumentEditorTest {
                 Log.i("LongDocument", "PASS row $line entry $entry: first/second IME and exact content after list re-entry")
             }
         }
+        returnToNotesList()
     }
 
     /** Capture the current actual app view, not a synthetic host; retain FLAG_SECURE.
@@ -146,6 +148,18 @@ class LongDocumentEditorTest {
         compose.waitForIdle()
         openDocumentFromList(document)
         Log.i("LongDocument", "opened id=$id, 100 distinguishable lines")
+    }
+
+    /** Each JUnit method starts and ends at the list, so editor NavBackStackEntries and IME
+     * focus from a preceding test cannot leak into the next method on the shared activity. */
+    private fun returnToNotesList() {
+        hideKeyboard()
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodesWithText(documentTitle, useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     /** Await Room -> Flow -> Compose list propagation before asking Espresso to click the row. */
