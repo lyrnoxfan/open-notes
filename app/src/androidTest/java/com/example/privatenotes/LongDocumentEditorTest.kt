@@ -134,6 +134,16 @@ class LongDocumentEditorTest {
     private val documentTitle = "长文滚动验收-${java.util.UUID.randomUUID()}"
 
     private fun openDocument() {
+        // Compose keeps the same activity/navigation host between test methods. The preceding
+        // long-document test intentionally ends with its note open, so always return to the list
+        // before creating and opening this test's own document.
+        if (compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty()) {
+            hideKeyboard()
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
+            compose.waitUntil(15_000) {
+                compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isEmpty()
+            }
+        }
         val id = runBlocking { container.noteRepository.createNote(documentTitle, document) }
         compose.waitForIdle()
         compose.onNodeWithText(documentTitle).performClick()
