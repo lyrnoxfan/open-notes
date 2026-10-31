@@ -95,6 +95,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Install ffmpeg for large-video fixture
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Run instrumented tests
         uses: reactivecircus/android-emulator-runner@v2.38.0
         with:
