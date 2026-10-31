@@ -12,6 +12,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import androidx.test.uiautomator.StaleObjectException
 import com.example.privatenotes.data.backup.StreamingMediaArchive
 import com.example.privatenotes.feature.notes.InlineMediaSyntax
 import com.example.privatenotes.feature.notes.RichMediaEditText
@@ -49,7 +50,11 @@ class PickerValidationTest {
         if (device.findObject(By.text(filename)) == null) {
             roots?.click()
             val downloads = device.wait(Until.findObject(By.textContains("Downloads")), 5000)
-            downloads?.click()
+            if (downloads != null) {
+                try { downloads.click() } catch (_: StaleObjectException) {
+                    checkNotNull(device.wait(Until.findObject(By.textContains("Downloads")), 5000)).click()
+                }
+            }
         }
         val file = device.wait(Until.findObject(By.text(filename)), 15000)
         if (file == null) {
@@ -57,7 +62,9 @@ class PickerValidationTest {
             device.dumpWindowHierarchy(output)
             throw AssertionError("System picker did not show $filename: ${output.readText().take(8000)}")
         }
-        file.click()
+        try { file.click() } catch (_: StaleObjectException) {
+            checkNotNull(device.wait(Until.findObject(By.text(filename)), 5000)).click()
+        }
         device.waitForIdle()
     }
     @Test fun pickerInsertCrossMediaEditAndArchiveRoundTrip() {
@@ -107,7 +114,11 @@ class PickerValidationTest {
         compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("note_row_$id").performClick()
-        compose.waitUntil(30000) { compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty() }
+        // The editor node can exist before its asynchronous repository load completes.
+        compose.waitUntil(30000) {
+            compose.onAllNodes(hasTestTag(EditorTags.CONTENT) and hasText("cross-media-replaced", substring = true))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag(EditorTags.CONTENT).assertTextContains("cross-media-replaced")
         hideKeyboard(); compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
