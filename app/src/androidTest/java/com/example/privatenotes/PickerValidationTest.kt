@@ -13,6 +13,8 @@ import androidx.test.uiautomator.Until
 import com.example.privatenotes.data.backup.StreamingMediaArchive
 import com.example.privatenotes.feature.notes.InlineMediaSyntax
 import com.example.privatenotes.feature.notes.RichMediaEditText
+import com.example.privatenotes.feature.notes.EditorTags
+import androidx.compose.ui.text.TextRange
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
@@ -62,10 +64,13 @@ class PickerValidationTest {
         val id = runBlocking { container.noteRepository.createNote("picker validation", "before middle after") }
         compose.waitUntil(20000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("note_row_$id").performClick()
-        compose.waitUntil(20000) { compose.onAllNodesWithTag("inline_media_editor").fetchSemanticsNodes().isNotEmpty() }
-        compose.runOnUiThread { editor().apply { requestFocus(); setSelection(text.length) } }
+        compose.waitUntil(20000) { compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(EditorTags.CONTENT).assertTextContains("before middle after")
+        compose.onNodeWithTag(EditorTags.CONTENT).performClick()
+        compose.onNodeWithTag(EditorTags.CONTENT).performTextInputSelection(TextRange("before middle after".length))
         pick("add_image", "wabi-picker-image.png")
         compose.waitUntil(30000) { runBlocking { container.mediaRepository.list(id).size == 1 } }
+        compose.waitUntil(30000) { compose.onAllNodesWithTag("inline_media_editor").fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
         compose.runOnUiThread { editor().apply { requestFocus(); setSelection(text.length) } }
         pick("add_video", "wabi-picker-video.mp4")
@@ -100,8 +105,8 @@ class PickerValidationTest {
         compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("note_row_$id").performClick()
-        compose.waitUntil(30000) { compose.onAllNodesWithTag("inline_media_editor").fetchSemanticsNodes().isNotEmpty() }
-        compose.runOnUiThread { assertTrue(RichMediaEditText.canonical(editor().text).contains("cross-media-replaced")) }
+        compose.waitUntil(30000) { compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag(EditorTags.CONTENT).assertTextContains("cross-media-replaced")
         hideKeyboard(); compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         runBlocking {
