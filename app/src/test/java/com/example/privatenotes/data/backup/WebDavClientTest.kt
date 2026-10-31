@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import okio.Buffer
+import okio.source
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -30,6 +31,7 @@ class WebDavClientTest {
             .heldCertificate(heldCertificate)
             .build()
         server = MockWebServer()
+        server.protocols = listOf(okhttp3.Protocol.HTTP_1_1)
         server.useHttps(serverCertificates.sslSocketFactory(), false)
         server.start()
 
@@ -37,6 +39,7 @@ class WebDavClientTest {
             .addTrustedCertificate(heldCertificate.certificate)
             .build()
         http = OkHttpClient.Builder()
+            .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
             .sslSocketFactory(clientCertificates.sslSocketFactory(), clientCertificates.trustManager)
             .followRedirects(false)
             .followSslRedirects(false)
@@ -46,6 +49,37 @@ class WebDavClientTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+
+    @Test fun `disk stream transport exceeds legacy 64 MiB and verifies download`(): Unit = runBlocking {
+        val file = java.io.File.createTempFile("stream-webdav", ".pns")
+        val downloaded = java.io.File.createTempFile("stream-download", ".pns")
+        try {
+            val block = ByteArray(1024*1024) { (it % 251).toByte() }
+            file.outputStream().use { output -> repeat(65) { output.write(block) } }
+            server.bodyLimit = 0
+            server.enqueue(MockResponse().setResponseCode(207).setBody(multistatus()))
+            server.enqueue(MockResponse().setResponseCode(201))
+            val uploaded = client().uploadFile("private-notes-stream.pns", file, "application/octet-stream".toMediaType())
+            assertEquals(65L*1024*1024, uploaded.sizeBytes)
+            assertEquals("PROPFIND", server.takeRequest().method)
+            val put = server.takeRequest()
+            assertEquals("PUT", put.method)
+            assertEquals(file.length(), put.bodySize)
+            assertEquals(file.length().toString(), put.getHeader("Content-Length"))
+            fun body() = Buffer().apply { file.inputStream().use { writeAll(it.source()) } }
+            server.enqueue(MockResponse().setResponseCode(200).setBody(body()))
+            assertEquals(WebDavVerification.FULL, client().verifyFile("private-notes-stream.pns", file))
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(200).setChunkedBody(body(),8192))
+            client().downloadTo("private-notes-stream.pns",downloaded)
+            assertEquals(file.length(),downloaded.length())
+            assertTrue(file.inputStream().use { sha256Stream(it).second }.contentEquals(downloaded.inputStream().use { sha256Stream(it).second }))
+            server.takeRequest()
+            server.enqueue(MockResponse().setResponseCode(200).setBody("wrong"))
+            assertThrows(BackupException::class.java) { runBlocking { client().verifyFile("private-notes-stream.pns", file) } }
+        } finally { file.delete(); downloaded.delete() }
     }
 
     @Test

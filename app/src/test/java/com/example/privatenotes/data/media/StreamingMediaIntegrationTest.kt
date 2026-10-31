@@ -46,7 +46,7 @@ class StreamingMediaIntegrationTest {
         val id = notes.createNote("capacity-canary", "private-body-canary")
         media.importStream(id, "48MiB.mp4", "video/mp4", Generated(48*1024*1024))
         val entity = media.list(id).single()
-        assertEquals(48*1024*1024, entity.size)
+        assertEquals(48L*1024*1024, entity.size)
         assertEquals(192, db.mediaDao().chunks(entity.id).size)
         val source = media.videoSource(entity)
         val head = ByteArray(12); assertEquals(12, source.readAt(0, head, 0, 12)); source.close()
@@ -78,15 +78,30 @@ class StreamingMediaIntegrationTest {
         try { media.importStream(id, "broken.mp4", "video/mp4", Generated(16*1024*1024,9*1024*1024)); fail("read failure") }
         catch (_: IOException) {}
         assertEquals(before, notes.findById(id)); assertTrue(db.mediaDao().all().isEmpty())
+        assertEquals(before, notes.findById(id)); assertTrue(db.mediaDao().all().isEmpty())
+        assertEquals(0L, db.openHelper.readableDatabase.query("SELECT count(*) FROM media_chunks").use { it.moveToFirst();it.getLong(0) })
+        // The streaming editor path must accept images larger than the legacy inline-JSON cap.
+        val imageBytes = 9 * 1024 * 1024
         val image = object : InputStream() {
             var at=0
             val signature=byteArrayOf(-119,80,78,71,13,10,26,10)
-            override fun read(): Int = if(at>MediaRules.LEGACY_MAX_BYTES) -1 else (if(at<8) signature[at++].toInt() and 255 else {at++; 1})
+            override fun read(): Int = if (at >= imageBytes) -1 else if (at < signature.size) signature[at++].toInt() and 255 else { at++; 1 }
         }
-        try { media.importStream(id,"large.png","image/png",image); fail("limit") }
-        catch (_: IllegalArgumentException) {}
-        assertEquals(before, notes.findById(id)); assertTrue(db.mediaDao().all().isEmpty())
-        assertEquals(0L, db.openHelper.readableDatabase.query("SELECT count(*) FROM media_chunks").use { it.moveToFirst();it.getLong(0) })
+        media.importStream(id,"large.png","image/png",image)
+        assertEquals(imageBytes.toLong(), media.list(id).single().size)
+        assertEquals(36, db.mediaDao().chunks(media.list(id).single().id).size)
+    }
+    @Test fun moreThanHundredItemsRoundTripThroughStreamingArchive() = runBlocking {
+        val id = notes.createNote("many", "body")
+        repeat(101) { media.importStream(id, "item-$it.mp4", "video/mp4", Generated(16)) }
+        val original = media.list(id)
+        assertEquals(101, original.size)
+        val out = ByteArrayOutputStream()
+        StreamingMediaArchive(db).write(out, "test-pass".toCharArray(), "test", 1000)
+        db.clearAllTables()
+        StreamingMediaArchive(db).restore(out.toByteArray().inputStream(), "test-pass".toCharArray())
+        assertEquals(original, media.list(id))
+        assertEquals("body", notes.findById(id)!!.content)
     }
     @Test fun authenticatedArchiveRejectsWrongPasswordAndTruncatedPayloadBeforeCommit() = runBlocking {
         val id = notes.createNote("restored", "original")
@@ -142,6 +157,67 @@ class StreamingMediaIntegrationTest {
         catch (_: Exception) {}
         assertEquals(original,media.list(id).single())
         assertEquals("keep-private",notes.findById(id)!!.content)
+    }
+
+    @Test fun automaticArchiveUsesDiskStreamForLargeMediaWithAndWithoutPassword() = runBlocking {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val id = notes.createNote("automatic", "before-media-after")
+        media.importStream(id, "48MiB.mp4", "video/mp4", Generated(48*1024*1024))
+        val original = media.list(id).single()
+        val service = BackupArchiveService(BackupSnapshotReader(db, clock), BackupJson(), AppVersionProvider(context),
+            streamingProvider = { StreamingMediaArchive(db) }, cacheDirectory = { context.cacheDir })
+        for (password in listOf(charArrayOf(), "test-pass".toCharArray())) {
+            val prepared = service.prepare(password)
+            val file = prepared.file
+            try {
+                assertTrue(file.length() > 48L*1024*1024)
+                assertEquals(password.isNotEmpty(), prepared.encrypted)
+                assertTrue(BackupFileNames.isBackupFile(prepared.fileName))
+                val head = file.inputStream().use { input -> ByteArray(8).also { input.read(it) } }
+                assertTrue(StreamingMediaArchive.isArchive(head))
+                assertEquals(password.isNotEmpty(), StreamingMediaArchive.isEncryptedArchive(head))
+                db.clearAllTables()
+                file.inputStream().use { StreamingMediaArchive(db).restore(it, password) }
+                assertEquals(original, media.list(id).single())
+                assertEquals("before-media-after", notes.findById(id)!!.content)
+                if (password.isEmpty()) {
+                    val before = db.backupDao().allNotes()
+                    RandomAccessFile(file, "rw").use { it.seek(it.length()/2); it.writeByte(17) }
+                    try { file.inputStream().use { StreamingMediaArchive(db).restore(it, password) }; fail("modified media") }
+                    catch (_: Exception) {}
+                    assertEquals(before, db.backupDao().allNotes())
+                    assertEquals(original, media.list(id).single())
+                }
+            } finally { prepared.close() }
+            assertFalse(file.exists())
+        }
+    }
+
+    @Test fun inlineMediaAndBodyCommitOrRollBackTogether() = runBlocking {
+        val id = notes.createNote("original", "before-after")
+        val before = notes.findById(id)
+        try {
+            media.importStream(id, "partial.mp4", "video/mp4", Generated(700000), "new title") {
+                throw IOException("injected failure after media chunk insertion")
+            }
+            fail("injected import failure")
+        } catch (_: IOException) {}
+        assertEquals(before, notes.findById(id))
+        assertTrue(media.list(id).isEmpty())
+        assertEquals(0L, db.openHelper.readableDatabase.query("SELECT count(*) FROM media_chunks").use { it.moveToFirst(); it.getLong(0) })
+        val mediaId = media.importStream(id, "ok.mp4", "video/mp4", Generated(700000), "new title") { "before[$it]after" }
+        assertEquals("before[$mediaId]after", notes.findById(id)!!.content)
+        val saved = notes.findById(id); val item = media.list(id).single()
+        try {
+            media.removeInline(id, mediaId, "new title") { throw IOException("injected failure after delete") }
+            fail("injected removal failure")
+        } catch (_: IOException) {}
+        assertEquals(saved, notes.findById(id)); assertEquals(item, media.list(id).single())
+        media.videoSource(item).close()
+        media.removeInline(id, mediaId, "new title") { "beforeafter" }
+        assertEquals("beforeafter", notes.findById(id)!!.content)
+        assertTrue(media.list(id).isEmpty())
+        assertEquals(0L, db.openHelper.readableDatabase.query("SELECT count(*) FROM media_chunks").use { it.moveToFirst(); it.getLong(0) })
     }
 
 }

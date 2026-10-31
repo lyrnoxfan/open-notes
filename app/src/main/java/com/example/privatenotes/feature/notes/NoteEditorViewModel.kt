@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -65,6 +67,7 @@ data class NoteEditorUiState(
     val media: List<com.example.privatenotes.data.media.NoteMediaEntity> = emptyList(),
     val mediaBusy: Boolean = false,
     val mediaError: String? = null,
+    val bodyMutationRevision: Long = 0,
 ) {
     val tags: List<EditorTag>
         get() = persistedTags.map { EditorTag(it.id, it.name) } +
@@ -120,6 +123,8 @@ class NoteEditorViewModel(
     private var noteId: String? = existingNoteId
     private var deleted = false
     private var deleting = false
+    // Ignore a delayed editor-buffer echo from before an atomic media change.
+    private var preMediaBodyEcho: String? = null
 
     private val pending = MutableStateFlow<Snapshot?>(null)
 
@@ -161,24 +166,46 @@ class NoteEditorViewModel(
 
     init {
         viewModelScope.launch {
-            _uiState.map { it.noteId }.distinctUntilChanged().collect { id ->
-                if (id != null) refreshMedia(id)
-            }
+            // Retry legacy attachment reconciliation after a media operation. Loading can finish
+            // while a picker import is busy; skipping then without observing the busy transition
+            // leaves older attachments invisible for the remainder of this editor session.
+            _uiState.map { Triple(it.noteId, it.isLoaded, it.mediaBusy) }.distinctUntilChanged()
+                .collect { (id, loaded, busy) ->
+                    if (id != null && loaded && !busy) mutex.withLock {
+                        val current = _uiState.value
+                        if (current.noteId == id && current.isLoaded && !current.mediaBusy && !current.isDeleted)
+                            refreshMedia(id)
+                    }
+                }
         }
     }
 
     private suspend fun refreshMedia(id: String) {
-        try { _uiState.update { it.copy(media = mediaRepository?.list(id).orEmpty()) } }
-        catch (c: CancellationException) { throw c }
-        catch (_: Exception) { _uiState.update { it.copy(mediaError = "无法读取附件") } }
+        try {
+            val media = mediaRepository?.list(id).orEmpty()
+            _uiState.update { it.copy(media = media) }
+            // Notes created before inline media used a separate attachment list. Keep those files
+            // visible by migrating their references into the note body once, at its end.
+            var content = _uiState.value.content
+            for (item in media) if (!_uiState.value.mediaBusy && item.id !in InlineMediaSyntax.ids(content)) {
+                content = InlineMediaSyntax.appendLegacy(content, item.id)
+            }
+            if (content != _uiState.value.content) mutateBody(content)
+        } catch (c: CancellationException) { throw c }
+        catch (_: Exception) { _uiState.update { it.copy(mediaError = "无法读取图片或视频") } }
     }
 
-    fun importMedia(uri: android.net.Uri, video: Boolean) {
+    fun importMedia(uri: android.net.Uri, video: Boolean, insertionOffset: Int = _uiState.value.content.length) {
         val mediaRepo = mediaRepository ?: return
-        if (_uiState.value.mediaBusy || deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
+        if (_uiState.value.mediaBusy || deleted || deleting) return
         _uiState.update { it.copy(mediaBusy = true, mediaError = null) }
         viewModelScope.launch {
             try {
+                // The system picker can return after the activity/process was recreated, before
+                // the existing note has finished loading. Hold the result until its actual body
+                // is available instead of silently dropping it or inserting into an empty body.
+                val loaded = _uiState.first { it.isLoaded || it.isDeleted }
+                check(!loaded.isDeleted && loaded.loadError == null) { "笔记未能加载，无法插入媒体" }
                 mutex.withLock {
                     check(!deleted && !deleting) { "笔记已删除" }
                     var id = noteId
@@ -188,7 +215,13 @@ class NoteEditorViewModel(
                         _uiState.update { it.copy(noteId = id) }
                         attachPendingTags(id)
                     }
-                    mediaRepo.importStream(id, uri, video)
+                    val snapshot = _uiState.value
+                    withContext(NonCancellable) {
+                        val insertedId = mediaRepo.importStream(id, uri, video, snapshot.title) { mediaId ->
+                            InlineMediaSyntax.insert(snapshot.content, insertionOffset, mediaId)
+                        }
+                        markMediaBodyPersisted(InlineMediaSyntax.insert(snapshot.content, insertionOffset, insertedId))
+                    }
                     refreshMedia(id)
                     runCatching { onPersisted() }
                 }
@@ -201,17 +234,34 @@ class NoteEditorViewModel(
     fun removeMedia(media: com.example.privatenotes.data.media.NoteMediaEntity) {
         val repo = mediaRepository ?: return
         if (_uiState.value.mediaBusy || deleted || deleting) return
+        _uiState.update { it.copy(mediaBusy = true, mediaError = null) }
         viewModelScope.launch {
             try {
                 mutex.withLock {
                     check(!deleted && !deleting) { "笔记已删除" }
-                    repo.remove(media.noteId, media.id)
+                    val snapshot = _uiState.value
+                    val body = InlineMediaSyntax.remove(snapshot.content, media.id)
+                    withContext(NonCancellable) {
+                        repo.removeInline(media.noteId, media.id, snapshot.title) { body }
+                        markMediaBodyPersisted(body)
+                    }
                     refreshMedia(media.noteId)
                     runCatching { onPersisted() }
                 }
             } catch (c: CancellationException) { throw c }
-            catch (e: Exception) { _uiState.update { it.copy(mediaError = e.message ?: "附件移除失败") } }
+            catch (e: Exception) { _uiState.update { it.copy(mediaError = e.message ?: "媒体移除失败") } }
+            finally { _uiState.update { it.copy(mediaBusy = false) } }
         }
+    }
+
+    /** Called only after the media and the body were committed in one transaction. */
+    private fun markMediaBodyPersisted(body: String) {
+        preMediaBodyEcho = _uiState.value.content.takeIf { it != body }
+        revision += 1
+        persistedRevision = revision
+        pending.value = null
+        _uiState.update { it.copy(content = body, bodyMutationRevision = it.bodyMutationRevision + 1,
+            saveStatus = SaveStatus.Saved(timeSource.nowMillis())) }
     }
 
     suspend fun mediaVideoSource(media: com.example.privatenotes.data.media.NoteMediaEntity): android.media.MediaDataSource =
@@ -219,6 +269,9 @@ class NoteEditorViewModel(
 
     suspend fun mediaBytes(media: com.example.privatenotes.data.media.NoteMediaEntity): ByteArray =
         checkNotNull(mediaRepository).bytes(media)
+
+    suspend fun mediaImagePreview(media: com.example.privatenotes.data.media.NoteMediaEntity): android.graphics.Bitmap =
+        checkNotNull(mediaRepository).imagePreview(media)
 
     fun togglePreview() {
         _uiState.update { it.copy(isPreview = !it.isPreview) }
@@ -241,7 +294,9 @@ class NoteEditorViewModel(
             _uiState.update { it.copy(pendingTags = it.pendingTags + name) }
             return
         }
-        viewModelScope.launch {
+        // Tag writes are durable user actions. Like the final note save, they must survive
+        // leaving the editor and clearing this ViewModel before the repository write completes.
+        externalScope.launch {
             val tagId = runCatching { tagRepository.ensureTag(name) }.getOrNull() ?: return@launch
             runCatching { tagRepository.attachTag(id, tagId) }
         }
@@ -254,14 +309,51 @@ class NoteEditorViewModel(
             return
         }
         val noteId = noteId ?: return
-        viewModelScope.launch {
+        // Removing a tag is also a durable mutation and may finish after navigation.
+        externalScope.launch {
             runCatching { tagRepository.detachTag(noteId, id) }
         }
     }
 
-    fun onTitleChange(value: String) = edit(title = value)
+    private fun mutateBody(content: String) {
+        edit(content = content)
+        _uiState.update { it.copy(bodyMutationRevision = it.bodyMutationRevision + 1) }
+    }
 
-    fun onContentChange(value: String) = edit(content = value)
+    fun onTitleChange(value: String) { if (!_uiState.value.mediaBusy) edit(title = value) }
+
+    fun onContentChange(value: String) {
+        if (_uiState.value.mediaBusy) return
+        if (value == preMediaBodyEcho) return
+        preMediaBodyEcho = null
+        val removed = InlineMediaSyntax.ids(_uiState.value.content) - InlineMediaSyntax.ids(value)
+        val mediaRepo = mediaRepository
+        val id = noteId
+        if (removed.isNotEmpty() && mediaRepo != null && id != null) {
+            val before = _uiState.value
+            _uiState.update { it.copy(mediaBusy = true, mediaError = null) }
+            // The selection may span text and several media. Freeze input immediately; do not
+            // separately autosave a body which points to partially removed database rows.
+            externalScope.launch(Dispatchers.Main.immediate) {
+                try {
+                    mutex.withLock {
+                        check(!deleted && !deleting) { "笔记已删除" }
+                        withContext(NonCancellable) {
+                            mediaRepo.removeInlineSelection(id, removed, before.title, value)
+                            markMediaBodyPersisted(value)
+                        }
+                        refreshMedia(id)
+                        runCatching { onPersisted() }
+                    }
+                } catch (c: CancellationException) { throw c }
+                catch (e: Exception) {
+                    _uiState.update { it.copy(content = before.content,
+                        bodyMutationRevision = it.bodyMutationRevision + 1,
+                        mediaError = e.message ?: "媒体编辑未能保存", saveStatus = SaveStatus.Failed(e.message ?: SAVE_ERROR)) }
+                } finally { _uiState.update { it.copy(mediaBusy = false) } }
+            }
+        } else edit(content = value)
+    }
 
     private fun edit(title: String? = null, content: String? = null) {
         if (deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
@@ -293,7 +385,7 @@ class NoteEditorViewModel(
     }
 
     fun deleteNote() {
-        if (deleted || deleting || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
+        if (deleted || deleting || _uiState.value.mediaBusy || !_uiState.value.isLoaded || _uiState.value.loadError != null) return
         val snapshot = Snapshot(revision, _uiState.value.title, _uiState.value.content)
         val keepInTrash = noteSettings.trashEnabled.value
         deleting = true

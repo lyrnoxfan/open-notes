@@ -140,7 +140,7 @@
     <string name="backup_reauthorize">重新授权</string>
     <string name="backup_local_none">尚未选择本地备份目录。</string>
     <string name="backup_local_permission_lost">目录授权已失效，请重新授权。</string>
-    <string name="backup_local_hint">每天自动生成一份完整备份，保留最近 30 份。自动备份是明文 JSON；需要加密时使用“立即备份”并设置密码。备份密码不会被保存。</string>
+    <string name="backup_local_hint">每天自动生成一份完整备份，保留最近 30 份。自动备份是不加密的流式文件；需要加密时使用“立即备份”并设置密码。备份密码不会被保存。</string>
     <string name="backup_backup_now">立即备份</string>
     <string name="backup_last_success">最近成功：%1$s</string>
     <string name="backup_never">从未成功</string>
@@ -162,7 +162,7 @@
     <string name="backup_webdav_password_saved">已保存密码；留空表示不修改</string>
     <string name="backup_webdav_directory">远端目录</string>
     <string name="backup_webdav_directory_hint">例如 notes-backup</string>
-    <string name="backup_webdav_hint">只允许 HTTPS，证书校验不可关闭。自动上传为明文 JSON；需要加密时使用“立即上传”并设置密码。上传使用已保存的配置；修改后请先保存。WebDAV 仅用于单向备份，不会覆盖本地数据。</string>
+    <string name="backup_webdav_hint">只允许 HTTPS，证书校验不可关闭。自动上传为不加密的流式文件；需要加密时使用“立即上传”并设置密码。上传使用已保存的配置；修改后请先保存。WebDAV 仅用于单向备份，不会覆盖本地数据。</string>
     <string name="backup_save">保存配置</string>
     <string name="backup_test_connection">测试连接</string>
     <string name="backup_upload_now">立即上传</string>
@@ -190,7 +190,7 @@
     <string name="backup_encryption_switch">使用密码加密</string>
     <string name="backup_encryption_password">备份密码</string>
     <string name="backup_encryption_confirm">确认密码</string>
-    <string name="backup_encryption_warning">不加密的备份是明文 JSON，任何拿到文件的人都能读到全部笔记、图片和视频附件。</string>
+    <string name="backup_encryption_warning">不加密的备份不受密码保护，任何拿到文件的人都能读取全部笔记、图片和视频。</string>
     <string name="backup_encryption_min">密码至少 8 位</string>
     <string name="backup_encryption_mismatch">两次输入的密码不一致</string>
     <string name="backup_encryption_no_store">密码只用于这一次备份，不会被保存。</string>

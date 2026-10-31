@@ -2,6 +2,12 @@
 # emulator-runner executes script lines separately: preserve status/loops in a single shell.
 set -uo pipefail
 result=0
+# This job includes real pointer taps and system-IME assertions. Keep the headless emulator awake
+# and unlocked so API 35 cannot hand window focus to the launcher mid-suite.
+adb shell svc power stayon true
+adb shell settings put system screen_off_timeout 1800000
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell wm dismiss-keyguard
 copy_longdoc_views() {
   local mode="$1"
   mkdir -p "build/long-document-evidence/$mode"
@@ -37,11 +43,15 @@ for file in $(adb shell run-as com.example.privatenotes ls files/swipe-evidence 
 done
 # Isolated media storage, encrypted restore, real image decode and in-memory video playback.
 adb shell pm clear com.example.privatenotes >/dev/null
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell wm dismiss-keyguard
 adb shell am instrument -w -e class com.example.privatenotes.MediaDeviceTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/media-device.txt 2>&1
 cat build/media-device.txt
 if ! grep -q "OK (3 tests)" build/media-device.txt; then result=1; fi
 # Long documents must be exercised through actual scroll, tap and keyboard interaction.
 adb shell pm clear com.example.privatenotes >/dev/null
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell wm dismiss-keyguard
 adb shell settings put secure show_ime_with_hard_keyboard 1
 adb logcat -c
 adb shell am instrument -w -e class com.example.privatenotes.LongDocumentEditorTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/long-document.txt 2>&1

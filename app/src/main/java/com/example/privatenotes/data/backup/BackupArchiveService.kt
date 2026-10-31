@@ -1,17 +1,83 @@
 package com.example.privatenotes.data.backup
 
 /**
- * Turns a database snapshot into file bytes and back.
- *
- * Exporting and importing share this class so the two sides can never disagree about the
- * envelope: a plaintext file is exactly the JSON body, an encrypted file is exactly the binary
- * envelope from [BackupCrypto].
+ * Writes new backups as bounded-memory stream files when the application provider is present.
+ * The ByteArray methods are retained for reading legacy JSON/PNB and isolated compatibility tests.
+ * New files use PNPLAIN3 (unencrypted) or PNMEDIA3 (authenticated encryption).
  */
 class BackupArchiveService(
     private val snapshotReader: BackupSnapshotReader,
     private val json: BackupJson,
     private val appVersionProvider: AppVersionProvider,
+    private val streamingProvider: (() -> StreamingMediaArchive)? = null,
+    private val cacheDirectory: (() -> java.io.File)? = null,
 ) {
+
+    /** Disk-backed, bounded-memory archive used by automatic local and remote backups. */
+    suspend fun prepare(password: CharArray?): PreparedBackup {
+        val file = java.io.File.createTempFile("notes-backup-", ".tmp", cacheDirectory?.invoke())
+        try {
+            val streaming = streamingProvider?.invoke()
+            if (streaming != null) {
+                val encrypted = !password.isNullOrEmpty()
+                file.outputStream().use { streaming.write(it, password ?: charArrayOf(), appVersionProvider.versionName(), System.currentTimeMillis()) }
+                val name = BackupFileNames.create(System.currentTimeMillis(), encrypted).substringBeforeLast('.') + if (encrypted) ".pnm" else ".pns"
+                return PreparedBackup(file, name, encrypted)
+            }
+            // Compatibility fallback for callers without the newer archive provider. Stream
+            // legacy schema-2 JSON/PNB directly to disk rather than materializing Base64 payloads.
+            file.delete()
+            return prepareLegacyJson(password)
+        } catch (failure: Throwable) { file.delete(); throw failure }
+    }
+
+    /**
+     * Create a legacy schema-2 JSON or PNB file using bounded-memory media streams.
+     * The ByteArray-returning [create] method remains for small compatibility/test callers only.
+     */
+    suspend fun prepareLegacyJson(password: CharArray?): PreparedBackup {
+        val file = java.io.File.createTempFile("notes-legacy-backup-", ".tmp", cacheDirectory?.invoke())
+        val encrypted = !password.isNullOrEmpty()
+        try {
+            java.io.FileOutputStream(file).use { raw ->
+                val limited = LimitedOutputStream(raw, BackupLimits.MAX_FILE_BYTES)
+                val payload = if (encrypted) BackupCrypto.encryptingOutputStream(limited, password!!) else limited
+                java.io.OutputStreamWriter(payload, Charsets.UTF_8).use { writer ->
+                    snapshotReader.writeStreaming(appVersionProvider.versionName(), json, writer)
+                }
+            }
+            if (file.length() > BackupLimits.MAX_FILE_BYTES) {
+                throw BackupException(BackupErrorKind.STORAGE, "备份文件超过 ${BackupLimits.MAX_FILE_BYTES} 字节")
+            }
+            val timestamp = System.currentTimeMillis()
+            return PreparedBackup(file, BackupFileNames.create(timestamp, encrypted), encrypted)
+        } catch (failure: Throwable) {
+            file.delete()
+            throw failure
+        }
+    }
+
+    private class LimitedOutputStream(
+        output: java.io.OutputStream,
+        private val maximum: Long,
+    ) : java.io.FilterOutputStream(output) {
+        private var written = 0L
+        override fun write(value: Int) {
+            ensureCapacity(1)
+            out.write(value)
+            written++
+        }
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            ensureCapacity(length.toLong())
+            out.write(bytes, offset, length)
+            written += length
+        }
+        private fun ensureCapacity(additional: Long) {
+            if (additional < 0 || written > maximum - additional) {
+                throw BackupException(BackupErrorKind.STORAGE, "备份文件超过 ${maximum} 字节")
+            }
+        }
+    }
 
     suspend fun create(password: CharArray?): ArchivedBackup {
         val document = snapshotReader.read(appVersionProvider.versionName())
@@ -126,5 +192,10 @@ object BackupFileNames {
     fun extension(encrypted: Boolean): String = if (encrypted) "pnb" else "json"
 
     fun isBackupFile(name: String): Boolean =
-        name.startsWith("$PREFIX-") && (name.endsWith(".json") || name.endsWith(".pnb"))
+        name.startsWith("$PREFIX-") && (name.endsWith(".json") || name.endsWith(".pnb") || name.endsWith(".pnm") || name.endsWith(".pns"))
+}
+
+/** Never retained beyond one operation; contains ciphertext when encryption was selected. */
+data class PreparedBackup(val file: java.io.File, val fileName: String, val encrypted: Boolean) : java.io.Closeable {
+    override fun close() { file.delete() }
 }

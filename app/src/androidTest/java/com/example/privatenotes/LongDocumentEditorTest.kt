@@ -43,7 +43,7 @@ class LongDocumentEditorTest {
     private val document = (1..100).joinToString("\n") { "第%03d行 记录 abc 中文".format(it) }
 
     @Test fun scrollThenTapAndEditBeyondFirstViewport() {
-        openDocument()
+        val noteId = openDocument()
         for (line in listOf(31, 60, 100, 5)) {
             val offset = scrollToAndTapLine(line)
             assertEquals("tap must address line $line, not a first-screen coordinate", offset, selection().start)
@@ -75,13 +75,13 @@ class LongDocumentEditorTest {
         hideKeyboard()
         compose.onNodeWithContentDescription(compose.activity.getString(com.example.privatenotes.R.string.editor_back)).performClick()
         compose.waitForIdle()
-        compose.onNodeWithText(documentTitle).performClick()
-        compose.waitUntil(15_000) { runCatching { text() == edited }.getOrDefault(false) }
+        openDocumentFromList(noteId, edited)
         Log.i("LongDocument", "long press selected row 100; edited content survived save/reopen")
+        returnToNotesList()
     }
 
     @Test fun firstImeAfterEachListEntryKeepsTheTappedLongDocumentLine() {
-        openDocument()
+        val noteId = openDocument()
         for (line in listOf(31, 60, 100)) {
             for (entry in 1..3) {
                 // Re-enter from the list every time: hiding the keyboard is not a new entry.
@@ -106,11 +106,11 @@ class LongDocumentEditorTest {
                 hideKeyboard()
                 compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
                 compose.waitForIdle()
-                compose.onNodeWithText(documentTitle).performClick()
-                compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
+                openDocumentFromList(noteId, document)
                 Log.i("LongDocument", "PASS row $line entry $entry: first/second IME and exact content after list re-entry")
             }
         }
+        returnToNotesList()
     }
 
     /** Capture the current actual app view, not a synthetic host; retain FLAG_SECURE.
@@ -133,12 +133,50 @@ class LongDocumentEditorTest {
 
     private val documentTitle = "长文滚动验收-${java.util.UUID.randomUUID()}"
 
-    private fun openDocument() {
+    private fun openDocument(): String {
+        // Compose keeps the same activity/navigation host between test methods. The preceding
+        // long-document test intentionally ends with its note open, so always return to the list
+        // before creating and opening this test's own document.
+        if (compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty()) {
+            hideKeyboard()
+            compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
+            compose.waitUntil(15_000) {
+                compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isEmpty()
+            }
+        }
         val id = runBlocking { container.noteRepository.createNote(documentTitle, document) }
         compose.waitForIdle()
-        compose.onNodeWithText(documentTitle).performClick()
-        compose.waitUntil(15_000) { runCatching { text() == document }.getOrDefault(false) }
+        openDocumentFromList(id, document)
         Log.i("LongDocument", "opened id=$id, 100 distinguishable lines")
+        return id
+    }
+
+    /** Each JUnit method starts and ends at the list, so editor NavBackStackEntries and IME
+     * focus from a preceding test cannot leak into the next method on the shared activity. */
+    private fun returnToNotesList() {
+        hideKeyboard()
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.editor_back)).performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodesWithText(documentTitle, useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    /** Await Room -> Flow -> Compose list propagation, then physically tap this note's full row. */
+    private fun openDocumentFromList(noteId: String, expectedContent: String) {
+        val rowTag = "note_row_$noteId"
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag(rowTag).fetchSemanticsNodes().isNotEmpty()
+        }
+        // Opening a note is not the pointer-hit-testing behavior under test (the body taps
+        // above remain physical). Use its semantic click action so small/large-font API 26
+        // list rows cannot miss the handler when their center is clipped by the viewport.
+        compose.onNodeWithTag(rowTag).assertIsDisplayed().performClick()
+        compose.waitUntil(15_000) {
+            compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.waitUntil(15_000) { runCatching { text() == expectedContent }.getOrDefault(false) }
     }
 
     private fun layout(): TextLayoutResult {
@@ -240,6 +278,7 @@ class LongDocumentEditorTest {
                 // a glyph at x=0 may not receive a physical hit if the pointer falls on its edge.
                 val localX = origin.x + glyph.left + (glyph.width * .5f).coerceAtLeast(1f) - bounds.left
                 Log.i("LongDocument", "BEFORE IME line=$line offset=${visibleGlyph.first} origin=$origin viewport=$bounds tap=($localX,$localY) glyph=$glyph")
+                compose.waitUntil(10_000) { compose.activity.window.decorView.hasWindowFocus() }
                 val frames = watchFirstImeFrames(line, target, bounds.top)
                 field().performTouchInput { click(Offset(localX, localY)) }
                 waitForKeyboard(true)

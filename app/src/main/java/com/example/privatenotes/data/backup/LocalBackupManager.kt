@@ -38,11 +38,11 @@ class LocalBackupManager(
             throw BackupException(BackupErrorKind.NOT_CONFIGURED, "No local backup directory is configured")
         }
         try {
-            val archived = archive.create(password)
-            val stored = directory.writeBackup(
+            archive.prepare(password).use { archived ->
+            val stored = directory.writeBackupFile(
                 baseName = archived.fileName,
-                mimeType = if (archived.encrypted) MIME_ENCRYPTED else MIME_PLAINTEXT,
-                bytes = archived.bytes,
+                mimeType = if (archived.encrypted || archived.fileName.endsWith(".pns")) MIME_ENCRYPTED else MIME_PLAINTEXT,
+                file = archived.file,
             )
             statusStore.markLocalSuccess(timeSource.nowMillis())
             pruneOldBackups()
@@ -51,6 +51,7 @@ class LocalBackupManager(
                 encrypted = archived.encrypted,
                 sizeBytes = stored.sizeBytes,
             )
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: BackupException) {

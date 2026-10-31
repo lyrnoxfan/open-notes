@@ -746,7 +746,7 @@ object NoteListTags {
  * used to be scanned in full, three times, to produce two visible lines.
  */
 internal fun plainExcerpt(markdown: String): String =
-    markdown
+    InlineMediaSyntax.split(markdown).joinToString(" ") { it.text.orEmpty() }
         .replace(CODE_FENCE, " ")
         .take(EXCERPT_CHARS)
         .replace(MARKDOWN_PUNCTUATION, "")
