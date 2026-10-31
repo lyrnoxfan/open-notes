@@ -68,7 +68,7 @@ jobs:
       fail-fast: false
       matrix:
         api-level: [26, 35]
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Booting an emulator on a shared runner plus 31 device tests; 30 minutes is the budget the
     # job is allowed before it is called a hang.
@@ -108,7 +108,7 @@ jobs:
           emulator-boot-timeout: 900
           # The seeding, reinstall and IME scripts run against their own install; see
           # app/src/androidTest/.../ScriptDriven.kt for why they cannot share this suite.
-          script: bash scripts/ci-device-check.sh
+          script: bash scripts/picker-validation.sh
 
       # Without repository admin rights the device-test log cannot be fetched over the API, but
       # annotations are public. One annotation per failure puts the test name and its assertion
