@@ -22,7 +22,8 @@ data class NoteMediaEntity(@PrimaryKey val id: String, val noteId: String,
 @Entity(tableName = "media_chunks", primaryKeys = ["mediaId", "position"],
     foreignKeys = [ForeignKey(entity = NoteMediaEntity::class, parentColumns = ["id"],
         childColumns = ["mediaId"], onDelete = ForeignKey.CASCADE)])
-data class MediaChunkEntity(val mediaId: String, val position: Int, val bytes: ByteArray)
+data class MediaChunkEntity(val mediaId: String, val position: Int, val bytes: ByteArray,
+    @ColumnInfo(defaultValue = "''") val sha256: String = MediaRules.digest(bytes))
 
 @Dao
 interface MediaDao {
@@ -37,6 +38,14 @@ interface MediaDao {
     fun chunkCursor(id: String): Cursor
     @Query("SELECT * FROM media_chunks WHERE mediaId = :id AND position = :position")
     fun chunk(id: String, position: Int): MediaChunkEntity?
+    @Query("SELECT * FROM note_media WHERE id = :id")
+    suspend fun find(id: String): NoteMediaEntity?
+    @Query("SELECT COUNT(*) FROM media_chunks WHERE mediaId = :id")
+    suspend fun chunkCount(id: String): Int
+    @Query("SELECT COUNT(*) FROM media_chunks WHERE mediaId = :id AND length(sha256) != 64")
+    suspend fun unhashedCount(id: String): Int
+    @Query("UPDATE media_chunks SET sha256 = :hash WHERE mediaId = :id AND position = :position")
+    suspend fun setChunkHash(id: String, position: Int, hash: String)
     @Update suspend fun update(media: NoteMediaEntity)
     @Insert suspend fun insert(media: NoteMediaEntity)
     @Insert suspend fun insertChunks(chunks: List<MediaChunkEntity>)

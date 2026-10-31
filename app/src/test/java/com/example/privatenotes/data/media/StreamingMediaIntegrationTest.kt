@@ -63,7 +63,11 @@ class StreamingMediaIntegrationTest {
             assertEquals("private-body-canary", notes.findById(id)!!.content)
             val restored = media.list(id).single()
             assertEquals(entity, restored)
-            media.videoSource(restored).close() // streams SHA verification over every restored byte
+            media.videoSource(restored).use { source ->
+                val data = ByteArray(MediaRules.CHUNK_SIZE)
+                var offset = 0L
+                while (offset < restored.size) offset += source.readAt(offset, data, 0, data.size)
+            } // every requested restored chunk is checked before it reaches playback
             val before = db.backupDao().allNotes()
             RandomAccessFile(file, "rw").use { it.setLength(it.length()-7) }
             try { file.inputStream().use { StreamingMediaArchive(db).restore(it, "test-pass".toCharArray()) }; fail("truncation") }
@@ -218,6 +222,42 @@ class StreamingMediaIntegrationTest {
         assertEquals("beforeafter", notes.findById(id)!!.content)
         assertTrue(media.list(id).isEmpty())
         assertEquals(0L, db.openHelper.readableDatabase.query("SELECT count(*) FROM media_chunks").use { it.moveToFirst(); it.getLong(0) })
+    }
+
+    @Test fun videoOpensWithoutReadingUnrequestedPayloadAndRejectsCorruptChunkOnRead() = runBlocking {
+        val id = notes.createNote("lazy", "body")
+        media.importStream(id, "local.mp4", "video/mp4", Generated(3 * MediaRules.CHUNK_SIZE))
+        val item = media.list(id).single()
+        assertEquals(0, db.mediaDao().unhashedCount(item.id))
+        // Corrupt the last local chunk without changing its recorded hash. Opening and reading
+        // the head must not scan it. Seeking to it must still detect corruption.
+        db.openHelper.writableDatabase.execSQL(
+            "UPDATE media_chunks SET bytes = zeroblob(?) WHERE mediaId = ? AND position = 2",
+            arrayOf(MediaRules.CHUNK_SIZE, item.id))
+        media.videoSource(item).use { source ->
+            val header = ByteArray(12)
+            assertEquals(12, source.readAt(0, header, 0, header.size))
+            assertEquals("ftyp", String(header, 4, 4))
+            try {
+                source.readAt(2L * MediaRules.CHUNK_SIZE, header, 0, header.size)
+                fail("corrupt chunk must not reach decoder")
+            } catch (_: IOException) {}
+        }
+    }
+
+    @Test fun legacyHashesBackfillOnlyAfterWholeFileVerificationAndRollBackOnDamage() = runBlocking {
+        val id = notes.createNote("legacy", "body")
+        media.importStream(id, "old.mp4", "video/mp4", Generated(2 * MediaRules.CHUNK_SIZE))
+        val item = media.list(id).single()
+        val sql = db.openHelper.writableDatabase
+        sql.execSQL("UPDATE media_chunks SET sha256 = '' WHERE mediaId = ?", arrayOf(item.id))
+        media.videoSource(item).close()
+        assertEquals(0, db.mediaDao().unhashedCount(item.id))
+        sql.execSQL("UPDATE media_chunks SET sha256 = '', bytes = zeroblob(?) WHERE mediaId = ? AND position = 1",
+            arrayOf(MediaRules.CHUNK_SIZE, item.id))
+        try { media.videoSource(item).close(); fail("damaged legacy media") }
+        catch (_: IllegalStateException) {}
+        assertEquals(1, db.mediaDao().unhashedCount(item.id))
     }
 
 }

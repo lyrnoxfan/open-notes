@@ -90,7 +90,7 @@ class RoomNoteRepository(
                     noteId = note.id,
                     deletedAt = note.deletedAt,
                     lastKnownUpdatedAt = note.updatedAt,
-                    schemaVersion = AppDatabase.SCHEMA_VERSION,
+                    schemaVersion = DeletionMarkerEntity.CURRENT_FORMAT_VERSION,
                 ),
             )
             noteDao.deleteById(id)
@@ -109,7 +109,7 @@ class RoomNoteRepository(
                         // backup row carrying the note's own updatedAt (§9.5).
                         deletedAt = maxOf(timeSource.nowMillis(), note.updatedAt + 1),
                         lastKnownUpdatedAt = note.updatedAt,
-                        schemaVersion = AppDatabase.SCHEMA_VERSION,
+                        schemaVersion = DeletionMarkerEntity.CURRENT_FORMAT_VERSION,
                     ),
                 )
                 noteDao.deleteById(note.id)
@@ -129,7 +129,7 @@ class RoomNoteRepository(
                         noteId = note.id,
                         deletedAt = deletedAt,
                         lastKnownUpdatedAt = note.updatedAt,
-                        schemaVersion = AppDatabase.SCHEMA_VERSION,
+                        schemaVersion = DeletionMarkerEntity.CURRENT_FORMAT_VERSION,
                     ),
                 )
                 noteDao.deleteById(note.id)

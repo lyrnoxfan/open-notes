@@ -115,7 +115,25 @@ class RoomNoteRepositoryTest {
         assertNotNull("permanent deletion must leave a tombstone (§5.3)", marker)
         assertEquals(trashed.deletedAt, marker!!.deletedAt)
         assertEquals(trashed.updatedAt, marker.lastKnownUpdatedAt)
-        assertEquals(AppDatabase.SCHEMA_VERSION, marker.schemaVersion)
+        assertEquals(DeletionMarkerEntity.CURRENT_FORMAT_VERSION, marker.schemaVersion)
+    }
+
+    @Test
+    fun `deletion markers remain backup compatible after database schema upgrades`() = runBlocking {
+        val single = repository.createNote("single", "body")
+        repository.moveToTrash(single)
+        repository.permanentlyDelete(single)
+        val batch = repository.createNote("batch", "body")
+        repository.deletePermanentlyAll(listOf(batch))
+        val expired = repository.createNote("expired", "body")
+        repository.moveToTrash(expired)
+        clock += NoteRepository.TRASH_RETENTION_MILLIS + 1
+        assertEquals(1, repository.purgeExpiredTrash(clock))
+        val snapshot = com.example.privatenotes.data.backup.BackupSnapshotReader(database, TimeSource { clock }).read("test")
+        val json = com.example.privatenotes.data.backup.BackupJson()
+        val restored = json.decode(json.encode(snapshot))
+        assertEquals(setOf(single, batch, expired), restored.deletionMarkers.map { it.noteId }.toSet())
+        assertTrue(restored.deletionMarkers.all { it.schemaVersion == DeletionMarkerEntity.CURRENT_FORMAT_VERSION })
     }
 
     @Test

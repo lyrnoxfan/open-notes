@@ -48,6 +48,11 @@ adb shell wm dismiss-keyguard
 adb shell am instrument -w -e class com.example.privatenotes.MediaDeviceTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/media-device.txt 2>&1
 cat build/media-device.txt
 if ! grep -q "OK (3 tests)" build/media-device.txt; then result=1; fi
+# Validate actual encrypted legacy databases and lazy media reads on both APIs.
+adb shell pm clear com.example.privatenotes >/dev/null
+adb shell am instrument -w -e class com.example.privatenotes.MediaStorageDeviceTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/media-storage-device.txt 2>&1
+cat build/media-storage-device.txt
+if ! grep -q "OK (3 tests)" build/media-storage-device.txt; then result=1; fi
 # Long documents must be exercised through actual scroll, tap and keyboard interaction.
 adb shell pm clear com.example.privatenotes >/dev/null
 adb shell input keyevent KEYCODE_WAKEUP
