@@ -83,6 +83,24 @@ class PickerValidationTest {
     @Test fun pickerInsertCrossMediaEditAndArchiveRoundTrip() {
         val image = InstrumentationRegistry.getInstrumentation().context.assets.open("media/picker-image.png").use { it.readBytes() }
         val video = InstrumentationRegistry.getInstrumentation().context.assets.open("media/sample.mp4").use { it.readBytes() }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val resolver = app.contentResolver
+            fun seed(name: String, mime: String, bytes: ByteArray) {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Downloads.MIME_TYPE, mime)
+                    put(android.provider.MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                    put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = checkNotNull(resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+                checkNotNull(resolver.openOutputStream(uri)).use { it.write(bytes) }
+                resolver.update(uri, android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Downloads.IS_PENDING, 0)
+                }, null, null)
+            }
+            seed("wabi-picker-image.png", "image/png", image)
+            seed("wabi-picker-video.mp4", "video/mp4", video)
+        }
         val id = runBlocking { container.noteRepository.createNote("picker validation", "before middle after") }
         compose.waitUntil(20000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("note_row_$id").performClick()
