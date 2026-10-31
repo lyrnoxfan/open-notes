@@ -60,7 +60,7 @@ class PickerValidationTest {
         if (file == null) {
             val output = java.io.File(app.cacheDir, "picker-tree.xml")
             device.dumpWindowHierarchy(output)
-            throw AssertionError("System picker did not show $filename: ${output.readText().take(8000)}")
+            throw AssertionError("System picker did not show $filename: ${output.readText()}")
         }
         try { file.click() } catch (_: StaleObjectException) {
             checkNotNull(device.wait(Until.findObject(By.text(filename)), 5000)).click()
@@ -110,16 +110,17 @@ class PickerValidationTest {
             val body = container.noteRepository.findById(id)?.content.orEmpty()
             body.contains("cross-media-replaced") && InlineMediaSyntax.ids(body).isEmpty() && container.mediaRepository.list(id).isEmpty()
         } }
+        val replaced = runBlocking { container.noteRepository.findById(id)!!.content }
         hideKeyboard()
         compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("note_row_$id").performClick()
         // The editor node can exist before its asynchronous repository load completes.
         compose.waitUntil(30000) {
-            compose.onAllNodes(hasTestTag(EditorTags.CONTENT) and hasText("cross-media-replaced", substring = true))
+            compose.onAllNodes(hasTestTag(EditorTags.CONTENT) and hasText(replaced))
                 .fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithTag(EditorTags.CONTENT).assertTextContains("cross-media-replaced")
+        compose.onNodeWithTag(EditorTags.CONTENT).assertTextEquals(replaced)
         hideKeyboard(); compose.onNodeWithContentDescription("返回").performClick()
         compose.waitUntil(30000) { compose.onAllNodesWithTag("note_row_$id").fetchSemanticsNodes().isNotEmpty() }
         runBlocking {
