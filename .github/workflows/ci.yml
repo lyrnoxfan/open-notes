@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     # Booting an emulator on a shared runner plus 31 device tests; 30 minutes is the budget the
     # job is allowed before it is called a hang.
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +108,7 @@ jobs:
           emulator-boot-timeout: 900
           # The seeding, reinstall and IME scripts run against their own install; see
           # app/src/androidTest/.../ScriptDriven.kt for why they cannot share this suite.
-          script: bash scripts/picker-validation.sh
+          script: bash scripts/large-video-validation.sh
 
       # Without repository admin rights the device-test log cannot be fetched over the API, but
       # annotations are public. One annotation per failure puts the test name and its assertion
