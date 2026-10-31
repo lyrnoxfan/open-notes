@@ -47,6 +47,11 @@ class PickerValidationTest {
         compose.onNodeWithTag(tag).assertIsEnabled().performClick()
         // Android 15's emulator launcher occasionally raises a Quickstep ANR on startup.
         // Wait for that specific system dialog; never dismiss app or substitute the picker.
+        // DocumentsUI list mode exposes a text label; Android 15 grid mode exposes
+        // the filename in the item's content description followed by size/date.
+        // Match the item itself, not the separate "Preview the file ..." control.
+        fun findFile() = device.findObject(By.text(filename))
+            ?: device.findObject(By.descStartsWith("$filename,"))
         var file: androidx.test.uiautomator.UiObject2? = null
         var navigated = false
         val deadline = android.os.SystemClock.uptimeMillis() + 45_000
@@ -57,7 +62,7 @@ class PickerValidationTest {
                 android.os.SystemClock.sleep(1000)
                 continue
             }
-            file = device.findObject(By.text(filename))
+            file = findFile()
             if (file != null) break
             if (!navigated) {
                 val roots = device.findObject(By.descContains("Show roots"))
@@ -76,7 +81,13 @@ class PickerValidationTest {
             throw AssertionError("System picker did not show $filename: ${output.readText()}")
         }
         try { file.click() } catch (_: StaleObjectException) {
-            checkNotNull(device.wait(Until.findObject(By.text(filename)), 5000)).click()
+            val retryDeadline = android.os.SystemClock.uptimeMillis() + 5_000
+            var fresh = findFile()
+            while (fresh == null && android.os.SystemClock.uptimeMillis() < retryDeadline) {
+                android.os.SystemClock.sleep(200)
+                fresh = findFile()
+            }
+            checkNotNull(fresh).click()
         }
         device.waitForIdle()
     }
