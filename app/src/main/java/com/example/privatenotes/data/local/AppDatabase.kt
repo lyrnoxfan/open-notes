@@ -18,7 +18,7 @@ import androidx.room.RoomDatabase
         NoteTagCrossRef::class,
         DeletionMarkerEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -41,6 +41,6 @@ abstract class AppDatabase : RoomDatabase() {
         const val NAME = "private_notes.db"
 
         /** Schema version, exposed so deletion markers can record which version made them. */
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
     }
 }

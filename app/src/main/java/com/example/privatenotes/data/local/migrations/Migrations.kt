@@ -10,5 +10,12 @@ object Migrations {
             db.execSQL("CREATE TABLE IF NOT EXISTS `media_chunks` (`mediaId` TEXT NOT NULL, `position` INTEGER NOT NULL, `bytes` BLOB NOT NULL, PRIMARY KEY(`mediaId`, `position`), FOREIGN KEY(`mediaId`) REFERENCES `note_media`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)")
         }
     }
-    val ALL: Array<Migration> = arrayOf(MEDIA_1_2)
+    // Existing payloads stay encrypted and untouched. Their missing checksums are backfilled
+    // lazily, in one verified transaction, rather than scanning every video during app upgrade.
+    val MEDIA_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `media_chunks` ADD COLUMN `sha256` TEXT NOT NULL DEFAULT ''")
+        }
+    }
+    val ALL: Array<Migration> = arrayOf(MEDIA_1_2, MEDIA_2_3)
 }

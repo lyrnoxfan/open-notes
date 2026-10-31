@@ -8,6 +8,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
+import com.example.privatenotes.data.local.AppDatabase
 import com.example.privatenotes.data.media.*
 import com.example.privatenotes.data.backup.*
 import kotlinx.coroutines.runBlocking
@@ -65,7 +66,7 @@ class MediaDeviceTest {
         try {
             assertEquals("MEDIA-MIGRATION-PRIVATE-CANARY", upgraded.noteDao().findById("legacy")!!.content)
             assertTrue(upgraded.mediaDao().all().isEmpty())
-            assertEquals(2, upgraded.openHelper.writableDatabase.version)
+            assertEquals(AppDatabase.SCHEMA_VERSION, upgraded.openHelper.writableDatabase.version)
             assertFalse(context.getDatabasePath(name).readBytes().toString(Charsets.ISO_8859_1).contains("MEDIA-MIGRATION-PRIVATE-CANARY"))
         } finally { upgraded.close(); context.deleteDatabase(name); key.fill(0) }
     }

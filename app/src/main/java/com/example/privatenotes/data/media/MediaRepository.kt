@@ -18,32 +18,27 @@ class MediaRepository(private val database: AppDatabase, private val context: Co
         MediaRules.read(database.mediaDao(), media)
     }
     suspend fun imagePreview(media: NoteMediaEntity, maxDimension: Int = 1800): android.graphics.Bitmap = withContext(Dispatchers.IO) {
-        require(media.mime.startsWith("image/") && media.size in 1..MediaRules.MAX_BYTES)
+        require(media.mime.startsWith("image/") && media.size in 1..MediaRules.MAX_BYTES && maxDimension > 0)
         val dao = database.mediaDao()
-        val count = MediaRules.chunkCount(media.size)
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        repeat(count) { position ->
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            val part = dao.chunk(media.id, position) ?: error("媒体分块缺失")
-            require(part.bytes.size == MediaRules.chunkBytes(media.size, position))
-            if (position == 0) require(MediaRules.matchesSignature(media.mime, part.bytes)) { "媒体格式校验失败" }
-            digest.update(part.bytes)
-        }
-        check(digest.digest().joinToString("") { "%02x".format(it) } == media.sha256) { "媒体校验失败" }
+        ensureChunkIntegrity(media)
+        require(MediaRules.matchesSignature(media.mime, checkedChunk(dao, media, 0))) { "媒体格式校验失败" }
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        ChunkInputStream(media.id, media.size, count, dao).use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        ChunkInputStream(media, dao).use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "图片无法解码" }
         var sample = 1
         while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) sample *= 2
-        val bitmap = ChunkInputStream(media.id, media.size, count, dao).use {
+        val bitmap = ChunkInputStream(media, dao).use {
             android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
         }
         bitmap ?: error("图片无法解码")
     }
 
     private class ChunkInputStream(
-        private val id: String, private val size: Long, private val count: Int, private val dao: MediaDao,
+        private val media: NoteMediaEntity, private val dao: MediaDao,
     ) : java.io.InputStream() {
+        private val size = media.size
+        private val count = MediaRules.chunkCount(size)
+
         private var position = 0L
         private var chunkIndex = -1
         private var chunk = ByteArray(0)
@@ -70,27 +65,48 @@ class MediaRepository(private val database: AppDatabase, private val context: Co
             val wanted = (position / MediaRules.CHUNK_SIZE).toInt()
             if (wanted == chunkIndex) return
             require(wanted < count)
-            chunk = dao.chunk(id, wanted)?.bytes ?: error("媒体分块缺失")
+            chunk = checkedChunk(dao, media, wanted)
             require(chunk.size == MediaRules.chunkBytes(size, wanted))
             chunkIndex = wanted
         }
     }
-    /** Verify sequentially, then let MediaPlayer request only the chunks it needs. */
+    /** Playback starts with the requested chunk, not a full-file hash pass. Payloads are
+     * copied into the encrypted app database at import; original provider URIs are never stored. */
     suspend fun videoSource(media: NoteMediaEntity): android.media.MediaDataSource = withContext(Dispatchers.IO) {
-        require(media.mime.startsWith("video/"))
+        require(media.mime.startsWith("video/") && media.size in 1..MediaRules.MAX_BYTES)
+        ensureChunkIntegrity(media)
         val dao = database.mediaDao()
-        require(media.size in 1..MediaRules.MAX_BYTES)
-        val hash = java.security.MessageDigest.getInstance("SHA-256")
-        val count = MediaRules.chunkCount(media.size)
-        repeat(count) { position ->
-            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-            val chunk = dao.chunk(media.id, position) ?: error("附件分块缺失")
-            require(chunk.bytes.size == MediaRules.chunkBytes(media.size, position))
-            hash.update(chunk.bytes)
+        ChunkedMediaSource(media.size) { position -> checkedChunk(dao, media, position) }
+    }
+
+    /** v2 media get one whole-file verification before hashes are committed. New imports and
+     * restores already have chunk hashes, so opening them never scans the payload in advance. */
+    private suspend fun ensureChunkIntegrity(media: NoteMediaEntity) {
+        val dao = database.mediaDao()
+        check(dao.find(media.id) == media) { "媒体已更改或删除" }
+        require(dao.chunkCount(media.id) == MediaRules.chunkCount(media.size)) { "媒体分块缺失" }
+        if (dao.unhashedCount(media.id) == 0) return
+        database.withTransaction {
+            check(dao.find(media.id) == media)
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            repeat(MediaRules.chunkCount(media.size)) { position ->
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val part = dao.chunk(media.id, position) ?: error("媒体分块缺失")
+                require(part.bytes.size == MediaRules.chunkBytes(media.size, position))
+                digest.update(part.bytes)
+                dao.setChunkHash(media.id, position, MediaRules.digest(part.bytes))
+            }
+            check(digest.digest().joinToString("") { "%02x".format(it) } == media.sha256) { "媒体校验失败" }
         }
-        val actual = hash.digest().joinToString("") { "%02x".format(it) }
-        check(actual == media.sha256) { "附件校验失败" }
-        ChunkedMediaSource(media.size) { position -> dao.chunk(media.id, position)?.bytes }
+    }
+
+    private companion object {
+        fun checkedChunk(dao: MediaDao, media: NoteMediaEntity, position: Int): ByteArray {
+            val part = dao.chunk(media.id, position) ?: error("媒体分块缺失")
+            require(part.bytes.size == MediaRules.chunkBytes(media.size, position))
+            check(part.sha256.length == 64 && MediaRules.digest(part.bytes) == part.sha256) { "媒体分块校验失败" }
+            return part.bytes
+        }
     }
     suspend fun prepare(uri: Uri, expectedVideo: Boolean): BackupMedia = withContext(Dispatchers.IO) {
         require(uri.scheme == "content") { "请选择系统文件选择器中的媒体" }
