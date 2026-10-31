@@ -172,7 +172,10 @@ class LongDocumentEditorTest {
         // Opening a note is not the pointer-hit-testing behavior under test (the body taps
         // above remain physical). Use its semantic click action so small/large-font API 26
         // list rows cannot miss the handler when their center is clipped by the viewport.
-        compose.onNodeWithTag(rowTag).assertIsDisplayed().performClick()
+        // A second synthetic note can be below the viewport at 2x font scale.
+        // Presence in LazyColumn semantics does not imply visibility; scroll the row into
+        // view before retaining the displayed assertion and opening it.
+        compose.onNodeWithTag(rowTag).performScrollTo().assertIsDisplayed().performClick()
         compose.waitUntil(15_000) {
             compose.onAllNodesWithTag(EditorTags.CONTENT).fetchSemanticsNodes().isNotEmpty()
         }
