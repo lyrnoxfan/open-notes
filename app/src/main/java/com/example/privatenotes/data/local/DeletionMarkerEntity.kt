@@ -32,7 +32,11 @@ data class DeletionMarkerEntity(
     @ColumnInfo(name = "lastKnownUpdatedAt")
     val lastKnownUpdatedAt: Long,
 
-    /** Database schema version at deletion time, so a future import can interpret the marker. */
+    /** Marker format version. Independent of Room schema changes so backups stay compatible. */
     @ColumnInfo(name = "schemaVersion")
     val schemaVersion: Int,
-)
+) {
+    companion object {
+        const val CURRENT_FORMAT_VERSION = 2
+    }
+}
