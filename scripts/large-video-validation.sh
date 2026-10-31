@@ -21,7 +21,7 @@ adb shell run-as com.example.privatenotes mkdir -p /data/user/0/com.example.priv
 adb shell run-as com.example.privatenotes cp /data/local/tmp/open-notes-large-video.mp4 /data/user/0/com.example.privatenotes/files/large-video.mp4
 adb shell run-as com.example.privatenotes ls -l /data/user/0/com.example.privatenotes/files/large-video.mp4
 adb shell rm /data/local/tmp/open-notes-large-video.mp4
-adb logcat -c
+adb logcat -c || echo "warning: could not clear logcat; capturing fresh test output" >&2
 adb shell am instrument -w -e class com.example.privatenotes.LargeVideoValidationTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/e2e/large-video-validation.txt 2>&1 || true
 adb logcat -d -s LargeMediaValidation:I >> build/e2e/large-video-validation.txt
 cat build/e2e/large-video-validation.txt
