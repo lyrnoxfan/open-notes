@@ -50,6 +50,65 @@ class MediaStorageDeviceTest {
             assertFalse(context.getDatabasePath(name).readBytes().toString(Charsets.ISO_8859_1).contains("MEDIA-MIGRATION-PRIVATE-CANARY"))
         } finally { upgraded.close(); context.deleteDatabase(name); key.fill(0) }
     }
+    @Test fun encryptedV2MediaMigratesAndLaterOpensWithoutFullPayloadScan() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "media-v2-cipher-test.db"
+        context.deleteDatabase(name)
+        val key = "synthetic-v2-test-passphrase".toByteArray()
+        System.loadLibrary("sqlcipher")
+        val schema = org.json.JSONObject(InstrumentationRegistry.getInstrumentation().context.assets
+            .open("media/schema-2.json").bufferedReader().use { it.readText() }).getJSONObject("database")
+        val bytes = ByteArray(3 * MediaRules.CHUNK_SIZE) { (it % 251).toByte() }
+        "ftyp".toByteArray().copyInto(bytes, 4)
+        val digest = MediaRules.digest(bytes)
+        val helper = net.zetetic.database.sqlcipher.SupportOpenHelperFactory(key.copyOf(), null, false).create(
+            androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context).name(name)
+                .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(2) {
+                    override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        val entities = schema.getJSONArray("entities")
+                        for (i in 0 until entities.length()) {
+                            val e = entities.getJSONObject(i)
+                            db.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", e.getString("tableName")))
+                            val indexes = e.getJSONArray("indices")
+                            for (j in 0 until indexes.length()) db.execSQL(indexes.getJSONObject(j).getString("createSql")
+                                .replace("\${TABLE_NAME}", e.getString("tableName")))
+                        }
+                        db.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+                        db.execSQL("INSERT INTO room_master_table VALUES(42,?)", arrayOf(schema.getString("identityHash")))
+                        db.execSQL("INSERT INTO notes VALUES ('n','old','preserved body',1,2,NULL)")
+                        db.execSQL("INSERT INTO note_media VALUES ('m','n','old.mp4','video/mp4',?,?)", arrayOf(bytes.size, digest))
+                        repeat(3) { pos -> db.execSQL("INSERT INTO media_chunks VALUES ('m',?,?)",
+                            arrayOf(pos, bytes.copyOfRange(pos * MediaRules.CHUNK_SIZE, (pos + 1) * MediaRules.CHUNK_SIZE))) }
+                    }
+                    override fun onUpgrade(db: androidx.sqlite.db.SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = error("unexpected")
+                }).build())
+        helper.writableDatabase.close(); helper.close()
+        val upgraded = com.example.privatenotes.data.local.EncryptedDatabaseProvider.openWithPassphrase(context, key, name)
+        try {
+            val dao = upgraded.mediaDao()
+            val item = dao.all().single()
+            val repo = MediaRepository(upgraded, context, com.example.privatenotes.data.repository.TimeSource { 1000L })
+            assertEquals(3, dao.unhashedCount(item.id))
+            repo.videoSource(item).use { source ->
+                val actual = ByteArray(bytes.size)
+                var offset = 0
+                while (offset < actual.size) offset += source.readAt(offset.toLong(), actual, offset, actual.size - offset)
+                assertArrayEquals(bytes, actual)
+            }
+            assertEquals(0, dao.unhashedCount(item.id))
+            assertEquals("preserved body", upgraded.noteDao().findById("n")!!.content)
+            // A damaged unrequested tail must not be scanned when opening or reading the head.
+            // This checks the performance-critical access pattern without flaky wall-clock limits.
+            upgraded.openHelper.writableDatabase.execSQL("UPDATE media_chunks SET bytes=zeroblob(?) WHERE mediaId='m' AND position=2", arrayOf(MediaRules.CHUNK_SIZE))
+            repo.videoSource(item).use { source ->
+                val head = ByteArray(16)
+                assertEquals(16, source.readAt(0, head, 0, 16))
+                assertArrayEquals(bytes.copyOfRange(0, 16), head)
+                try { source.readAt((2 * MediaRules.CHUNK_SIZE).toLong(), head, 0, 16); fail("tail corruption must be rejected") }
+                catch (_: java.io.IOException) { }
+            }
+        } finally { upgraded.close(); context.deleteDatabase(name); key.fill(0); bytes.fill(0) }
+    }
     @Test fun streamedTwelveMiBMediaArchiveAndInterruptedImportRollBackOnSqlCipher() = runBlocking {
         fun stage(name: String) = android.util.Log.i("MediaStorageStage", name)
         stage("create note")
