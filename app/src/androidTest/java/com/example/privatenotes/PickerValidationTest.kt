@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+
 package com.example.privatenotes
 
 import android.view.View

@@ -4,8 +4,11 @@ adb shell svc power stayon true
 adb shell settings put system screen_off_timeout 1800000
 adb shell input keyevent KEYCODE_WAKEUP
 adb shell wm dismiss-keyguard
-adb push app/src/androidTest/assets/media/picker-image.png /sdcard/Download/wabi-picker-image.png >/dev/null
-adb push app/src/androidTest/assets/media/sample.mp4 /sdcard/Download/wabi-picker-video.mp4 >/dev/null
+adb shell mkdir -p /sdcard/Download
+adb push app/src/androidTest/assets/media/picker-image.png /data/local/tmp/wabi-picker-image.png >/dev/null
+adb push app/src/androidTest/assets/media/sample.mp4 /data/local/tmp/wabi-picker-video.mp4 >/dev/null
+adb shell cp /data/local/tmp/wabi-picker-image.png /sdcard/Download/wabi-picker-image.png
+adb shell cp /data/local/tmp/wabi-picker-video.mp4 /sdcard/Download/wabi-picker-video.mp4
 adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/wabi-picker-image.png >/dev/null
 adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/wabi-picker-video.mp4 >/dev/null
 ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
