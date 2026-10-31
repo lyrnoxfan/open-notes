@@ -45,18 +45,31 @@ class PickerValidationTest {
     private fun pick(tag: String, filename: String) {
         hideKeyboard()
         compose.onNodeWithTag(tag).assertIsEnabled().performClick()
-        val roots = device.wait(Until.findObject(By.descContains("Show roots")), 5000)
-            ?: device.findObject(By.descContains("Browse"))
-        if (device.findObject(By.text(filename)) == null) {
-            roots?.click()
-            val downloads = device.wait(Until.findObject(By.textContains("Downloads")), 5000)
-            if (downloads != null) {
-                try { downloads.click() } catch (_: StaleObjectException) {
-                    checkNotNull(device.wait(Until.findObject(By.textContains("Downloads")), 5000)).click()
-                }
+        // Android 15's emulator launcher occasionally raises a Quickstep ANR on startup.
+        // Wait for that specific system dialog; never dismiss app or substitute the picker.
+        var file: androidx.test.uiautomator.UiObject2? = null
+        var navigated = false
+        val deadline = android.os.SystemClock.uptimeMillis() + 45_000
+        while (android.os.SystemClock.uptimeMillis() < deadline && file == null) {
+            if (device.findObject(By.textContains("Quickstep isn't responding")) != null) {
+                device.findObject(By.res("android", "aerr_wait"))?.click()
+                navigated = false
+                android.os.SystemClock.sleep(1000)
+                continue
             }
+            file = device.findObject(By.text(filename))
+            if (file != null) break
+            if (!navigated) {
+                val roots = device.findObject(By.descContains("Show roots"))
+                    ?: device.findObject(By.descContains("Browse"))
+                try {
+                    if (roots != null) roots.click()
+                    val downloads = device.wait(Until.findObject(By.textContains("Downloads")), 3000)
+                    if (downloads != null) { downloads.click(); navigated = true }
+                } catch (_: StaleObjectException) { navigated = false }
+            }
+            android.os.SystemClock.sleep(1000)
         }
-        val file = device.wait(Until.findObject(By.text(filename)), 15000)
         if (file == null) {
             val output = java.io.File(app.cacheDir, "picker-tree.xml")
             device.dumpWindowHierarchy(output)
