@@ -15,7 +15,12 @@ adb shell wm dismiss-keyguard
 adb install -r app/build/outputs/apk/debug/app-debug.apk >/dev/null
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk >/dev/null
 adb shell pm clear com.example.privatenotes >/dev/null
-adb shell run-as com.example.privatenotes sh -c 'cat > files/large-video.mp4' < build/e2e/large-video.mp4
+# pm clear removes the private files directory; stage as shell, then copy as the app UID.
+adb push build/e2e/large-video.mp4 /data/local/tmp/open-notes-large-video.mp4 >/dev/null
+adb shell run-as com.example.privatenotes mkdir -p /data/user/0/com.example.privatenotes/files
+adb shell run-as com.example.privatenotes cp /data/local/tmp/open-notes-large-video.mp4 /data/user/0/com.example.privatenotes/files/large-video.mp4
+adb shell run-as com.example.privatenotes ls -l /data/user/0/com.example.privatenotes/files/large-video.mp4
+adb shell rm /data/local/tmp/open-notes-large-video.mp4
 adb logcat -c
 adb shell am instrument -w -e class com.example.privatenotes.LargeVideoValidationTest com.example.privatenotes.test/androidx.test.runner.AndroidJUnitRunner > build/e2e/large-video-validation.txt 2>&1 || true
 adb logcat -d -s LargeMediaValidation:I >> build/e2e/large-video-validation.txt
