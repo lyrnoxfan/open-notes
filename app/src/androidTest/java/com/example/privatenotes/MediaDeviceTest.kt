@@ -146,13 +146,20 @@ class MediaDeviceTest {
             assertEquals(setOf("test-image", "test-video"), InlineMediaSyntax.ids(body))
             assertFalse(editor.text.toString().contains("private-note-media"))
         }
+        // Reopening can restore a focused cursor/IME at the beginning of the note. Let the
+        // keyboard finish hiding before scrolling/tapping the video; otherwise API 35's resize
+        // can move the object between calculating its screen position and injecting the tap.
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
         // Open the video object by a coordinate tap on the actual native layout.
         compose.runOnUiThread {
             val editor = nativeEditor()
             val body = com.example.privatenotes.feature.notes.RichMediaEditText.canonical(editor.text)
             val offset = com.example.privatenotes.feature.notes.RichMediaEditText.displayOffset(body, body.indexOf(InlineMediaSyntax.reference("test-video")))
+            editor.setSelection(offset)
             editor.bringPointIntoView(offset)
         }
+        compose.waitForIdle()
         native.perform(androidx.test.espresso.action.GeneralClickAction(androidx.test.espresso.action.Tap.SINGLE,
             androidx.test.espresso.action.CoordinatesProvider { view ->
                 val editor = view as com.example.privatenotes.feature.notes.RichMediaEditText

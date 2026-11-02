@@ -140,7 +140,11 @@ class SwipeDeleteRegressionTest {
         row(one).performTouchInput { swipeLeft() }
         compose.waitUntil(10000) { runBlocking { repo.findById(one)?.deletedAt != null } }
         compose.onNodeWithTag(NoteListTags.TRASH).performClick()
-        compose.onNodeWithText(compose.activity.getString(R.string.trash_restore)).performClick()
+        // The database emission can precede navigation's first trash-screen composition.
+        // Wait for the actual action, not just the already-committed deletedAt value.
+        val restore = compose.activity.getString(R.string.trash_restore)
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(restore).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(restore).performClick()
         compose.waitUntil(10000) { runBlocking { repo.findById(one)?.deletedAt == null } }
         runBlocking { repo.moveToTrash(one) }
         compose.waitUntil(10000) { compose.onAllNodesWithText("回收站生命周期").fetchSemanticsNodes().isNotEmpty() }
