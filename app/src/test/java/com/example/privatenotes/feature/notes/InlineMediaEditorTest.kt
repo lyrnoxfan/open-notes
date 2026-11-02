@@ -115,4 +115,38 @@ class InlineMediaEditorTest {
         assertEquals(9, editor.selectionEnd)
         assertEquals(6, editor.text.getSpanStart(marker))
     }
+    @Test fun asyncImageAndLateMetadataNotifyTextSpanWatcherWithoutResettingEditable() {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val editor = RichMediaEditText(context)
+        val body = "before" + InlineMediaSyntax.reference("one") + "after"
+        editor.setDocument(body, 0, 0)
+        editor.setSelection(2, 4)
+        val editable = editor.text
+        val composition = Any()
+        editable.setSpan(composition, 2, 4, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE or android.text.Spanned.SPAN_COMPOSING)
+        var changed = 0
+        val watcher = object : android.text.SpanWatcher {
+            override fun onSpanAdded(text: android.text.Spannable, what: Any, start: Int, end: Int) {}
+            override fun onSpanRemoved(text: android.text.Spannable, what: Any, start: Int, end: Int) {}
+            override fun onSpanChanged(text: android.text.Spannable, what: Any, oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int) {
+                if (what is android.text.style.ReplacementSpan) changed++
+            }
+        }
+        editable.setSpan(watcher, 0, editable.length, android.text.Spanned.SPAN_INCLUSIVE_INCLUSIVE)
+        val item = NoteMediaEntity("one", "n", "p.png", "image/png", 12, "hash")
+        editor.mediaById = mapOf("one" to item)
+        assertEquals("Late metadata must invalidate cached text runs", 1, changed)
+        editor.mediaById = mapOf("one" to item)
+        assertEquals("Unchanged save echo must not re-record spans", 1, changed)
+        editor.failImage("one")
+        assertEquals("Failure must replace the loading text", 2, changed)
+        editor.cacheImage("one", Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888))
+        assertEquals("Decode completion must invalidate cached text runs", 3, changed)
+        assertSame(editable, editor.text)
+        assertEquals(2, editor.selectionStart)
+        assertEquals(4, editor.selectionEnd)
+        assertEquals(2, editor.text.getSpanStart(composition))
+        assertEquals(body, RichMediaEditText.canonical(editor.text))
+    }
+
 }

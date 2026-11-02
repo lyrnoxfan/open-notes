@@ -101,9 +101,17 @@ internal class RichMediaEditText(context: Context) : EditText(context) {
         set(value) {
             // Deleted rows cannot be resurrected by Android's private undo stack. Once an
             // atomic deletion commits, rebuild the editable to discard that stale history.
+            if (field == value) return
+            val changedIds = (field.keys + value.keys).filter { field[it] != value[it] }
             if ((field.keys - value.keys).isNotEmpty()) resetHistory = true
             field = value
-            invalidate()
+            // Metadata can arrive after the body. Re-record pending spans too, otherwise a
+            // cached placeholder never reaches draw() to request its now-available image.
+            changedIds.forEach { id ->
+                images.remove(id)
+                failed.remove(id)
+                refreshMediaSpan(id)
+            }
         }
     private var changing = false
     private val loading = mutableSetOf<String>()
@@ -218,8 +226,31 @@ internal class RichMediaEditText(context: Context) : EditText(context) {
     private fun isLongClickableSelection() = selectionStart != selectionEnd
     override fun performClick(): Boolean { super.performClick(); return true }
     private fun availableWidth() = (width - totalPaddingLeft - totalPaddingRight).coerceAtLeast((180 * resources.displayMetrics.density).toInt())
-    fun cacheImage(id: String, bitmap: Bitmap) { loading.remove(id); images.put(id, bitmap); invalidate() }
-    fun failImage(id: String) { loading.remove(id); failed.add(id); invalidate() }
+    fun cacheImage(id: String, bitmap: Bitmap) {
+        loading.remove(id)
+        failed.remove(id)
+        images.put(id, bitmap)
+        refreshMediaSpan(id)
+    }
+    fun failImage(id: String) {
+        loading.remove(id)
+        failed.add(id)
+        refreshMediaSpan(id)
+    }
+
+    private fun refreshMediaSpan(id: String) {
+        // invalidate() alone repaints the View, but EditText's hardware-accelerated Editor
+        // can replay an old text RenderNode containing the loading placeholder. Notify its
+        // SpanWatcher that this ReplacementSpan changed appearance so that the affected text
+        // block is re-recorded. Keep the editable, selection, composing spans and undo intact.
+        val value = text
+        value.getSpans(0, value.length, MediaSpan::class.java)
+            .filter { it.id == id }
+            .forEach { span ->
+                value.setSpan(span, value.getSpanStart(span), value.getSpanEnd(span), value.getSpanFlags(span))
+            }
+        invalidate()
+    }
 
     private inner class MediaSpan(val id: String) : ReplacementSpan() {
         private fun boxHeight() = (200 * resources.displayMetrics.density).toInt()
