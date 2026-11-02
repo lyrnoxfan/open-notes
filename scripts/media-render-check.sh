@@ -12,4 +12,11 @@ cat build/media-render/result.txt
 for name in before-loading.png after-loaded.png; do
   adb exec-out run-as com.example.privatenotes cat "files/media-render-evidence/$name" > "build/media-render/$name"
 done
-grep -q 'OK (1 test)' build/media-render/result.txt
+if [ "${1:-fixed}" = baseline ]; then
+  # Success means the known visual failure was reproduced, NOT that the old editor passed.
+  grep -q 'Decoded bitmap must appear automatically' build/media-render/result.txt
+  grep -q 'Tests run: 1,  Failures: 1' build/media-render/result.txt
+  echo 'NEGATIVE CONTROL: reproduced stale rendered loading placeholder in v1.10.2'
+else
+  grep -q 'OK (1 test)' build/media-render/result.txt
+fi

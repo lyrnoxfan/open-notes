@@ -1,6 +1,12 @@
 name: Media render regression
 
 on:
+  pull_request:
+    paths:
+      - 'app/src/main/java/com/example/privatenotes/feature/notes/InlineMediaEditor.kt'
+      - 'app/src/androidTest/java/com/example/privatenotes/InlineMediaRenderTest.kt'
+      - 'scripts/media-render-check.sh'
+      - '.github/workflows/media-render-regression.yml'
   workflow_dispatch:
     inputs:
       baseline:
@@ -14,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         api: [26, 35]
-        editor: ${{ inputs.baseline && fromJSON('["fixed","baseline"]') || fromJSON('["fixed"]') }}
+        editor: ${{ (github.event_name == 'pull_request' || inputs.baseline) && fromJSON('["fixed","baseline"]') || fromJSON('["fixed"]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -44,7 +50,7 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          script: bash scripts/media-render-check.sh
+          script: bash scripts/media-render-check.sh ${{ matrix.editor }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
