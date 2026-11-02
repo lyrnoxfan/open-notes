@@ -101,9 +101,17 @@ internal class RichMediaEditText(context: Context) : EditText(context) {
         set(value) {
             // Deleted rows cannot be resurrected by Android's private undo stack. Once an
             // atomic deletion commits, rebuild the editable to discard that stale history.
+            if (field == value) return
+            val changedIds = (field.keys + value.keys).filter { field[it] != value[it] }
             if ((field.keys - value.keys).isNotEmpty()) resetHistory = true
             field = value
-            invalidate()
+            // Metadata can arrive after the body. Re-record pending spans too, otherwise a
+            // cached placeholder never reaches draw() to request its now-available image.
+            changedIds.forEach { id ->
+                images.remove(id)
+                failed.remove(id)
+                refreshMediaSpan(id)
+            }
         }
     private var changing = false
     private val loading = mutableSetOf<String>()
