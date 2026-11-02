@@ -1,0 +1,52 @@
+name: Media render regression
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Also run the unchanged v1.10.2 editor as a negative control (expected red)
+        type: boolean
+        default: false
+
+jobs:
+  render:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [26, 35]
+        editor: ${{ inputs.baseline && fromJSON('["fixed","baseline"]') || fromJSON('["fixed"]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore released editor only for negative control
+        if: matrix.editor == 'baseline'
+        run: |
+          git fetch origin tag v1.10.2 --depth=1
+          git show v1.10.2:app/src/main/java/com/example/privatenotes/feature/notes/InlineMediaEditor.kt > app/src/main/java/com/example/privatenotes/feature/notes/InlineMediaEditor.kt
+      - name: Build test APKs
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify hardware-rendered pixels without tapping
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          profile: pixel_5
+          disable-animations: true
+          script: bash scripts/media-render-check.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: media-render-${{ matrix.editor }}-api${{ matrix.api }}
+          path: build/media-render
