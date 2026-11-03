@@ -5,6 +5,11 @@ on:
     paths:
       - 'app/src/main/java/com/example/privatenotes/feature/notes/InlineMediaEditor.kt'
       - 'app/src/androidTest/java/com/example/privatenotes/InlineMediaRenderTest.kt'
+      - 'app/src/main/java/com/example/privatenotes/data/media/MediaRepository.kt'
+      - 'app/src/main/java/com/example/privatenotes/feature/notes/NoteEditorViewModel.kt'
+      - 'app/src/androidTest/java/com/example/privatenotes/VideoMediaRenderTest.kt'
+      - 'app/src/androidTest/assets/media/poster-magenta.mp4'
+      - 'scripts/video-poster-check.sh'
       - 'scripts/media-render-check.sh'
       - '.github/workflows/media-render-regression.yml'
   workflow_dispatch:
@@ -50,7 +55,9 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          script: bash scripts/media-render-check.sh ${{ matrix.editor }}
+          script: |
+            bash scripts/media-render-check.sh ${{ matrix.editor }}
+            if [ '${{ matrix.editor }}' = fixed ]; then bash scripts/video-poster-check.sh; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

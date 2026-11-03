@@ -271,7 +271,7 @@ class NoteEditorViewModel(
         checkNotNull(mediaRepository).bytes(media)
 
     suspend fun mediaImagePreview(media: com.example.privatenotes.data.media.NoteMediaEntity): android.graphics.Bitmap =
-        checkNotNull(mediaRepository).imagePreview(media)
+        checkNotNull(mediaRepository).let { if (media.mime.startsWith("video/")) it.videoPreview(media) else it.imagePreview(media) }
 
     fun togglePreview() {
         _uiState.update { it.copy(isPreview = !it.isPreview) }

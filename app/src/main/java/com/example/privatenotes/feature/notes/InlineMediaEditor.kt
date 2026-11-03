@@ -64,7 +64,7 @@ internal fun InlineMediaEditor(
                 openMedia = { opened = it }
                 requestImage = { id ->
                     val item = currentMedia[id]
-                    if (item != null && item.mime.startsWith("image/")) scope.launch {
+                    if (item != null && (item.mime.startsWith("image/") || item.mime.startsWith("video/"))) scope.launch {
                         try { cacheImage(id, currentPreview(item)) }
                         catch (c: kotlinx.coroutines.CancellationException) { throw c }
                         catch (_: Exception) { failImage(id) }
@@ -263,18 +263,31 @@ internal class RichMediaEditText(context: Context) : EditText(context) {
             val box = RectF(x, (y - boxHeight()).toFloat(), x + availableWidth(), y.toFloat())
             saved.color = android.graphics.Color.rgb(225, 235, 228)
             canvas.drawRoundRect(box, 12f, 12f, saved)
+            val video = mediaById[id]?.mime?.startsWith("video/") == true
             val bitmap = images.get(id)
             if (bitmap != null) {
                 val ratio = minOf(box.width() / bitmap.width, box.height() / bitmap.height)
                 val w = bitmap.width * ratio; val h = bitmap.height * ratio
                 canvas.drawBitmap(bitmap, null, RectF(box.centerX() - w/2, box.centerY() - h/2, box.centerX() + w/2, box.centerY() + h/2), saved)
             } else {
-                val video = mediaById[id]?.mime?.startsWith("video/") == true
                 saved.color = android.graphics.Color.rgb(42, 66, 51)
                 saved.textSize = 16 * resources.displayMetrics.scaledDensity
-                canvas.drawText(if (video) "▶  点按播放视频" else if (id in failed) "图片读取失败，点按查看" else "正在读取图片…", x + 16, box.centerY(), saved)
-                if (!video && mediaById[id]?.mime?.startsWith("image/") == true && id !in failed && loading.add(id))
+                canvas.drawText(if (video) { if (id in failed) "▶  封面不可用，点按播放" else "正在读取视频封面…" } else if (id in failed) "图片读取失败，点按查看" else "正在读取图片…", x + 16, box.centerY(), saved)
+                if ((video || mediaById[id]?.mime?.startsWith("image/") == true) && id !in failed && loading.add(id))
                     post { requestImage?.invoke(id) }
+            }
+            if (video && bitmap != null) {
+                saved.color = android.graphics.Color.argb(175, 0, 0, 0)
+                val radius = 24 * resources.displayMetrics.density
+                canvas.drawCircle(box.centerX(), box.centerY(), radius, saved)
+                saved.color = android.graphics.Color.WHITE
+                val triangle = android.graphics.Path().apply {
+                    moveTo(box.centerX() - radius * .25f, box.centerY() - radius * .5f)
+                    lineTo(box.centerX() + radius * .55f, box.centerY())
+                    lineTo(box.centerX() - radius * .25f, box.centerY() + radius * .5f)
+                    close()
+                }
+                canvas.drawPath(triangle, saved)
             }
         }
     }
