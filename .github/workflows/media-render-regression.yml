@@ -55,17 +55,9 @@ jobs:
           arch: x86_64
           profile: pixel_5
           disable-animations: true
-          script: bash scripts/media-render-check.sh ${{ matrix.editor }}
-      - name: Verify encrypted video poster without touching the placeholder
-        if: matrix.editor == 'fixed'
-        uses: reactivecircus/android-emulator-runner@v2.38.0
-        with:
-          api-level: ${{ matrix.api }}
-          target: default
-          arch: x86_64
-          profile: pixel_5
-          disable-animations: true
-          script: bash scripts/video-poster-check.sh
+          script: |
+            bash scripts/media-render-check.sh ${{ matrix.editor }}
+            if [ '${{ matrix.editor }}' = fixed ]; then bash scripts/video-poster-check.sh; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
