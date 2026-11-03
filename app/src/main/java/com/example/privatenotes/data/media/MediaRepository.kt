@@ -33,6 +33,27 @@ class MediaRepository(private val database: AppDatabase, private val context: Co
         bitmap ?: error("图片无法解码")
     }
 
+    /** A bounded poster frame decoded directly from the encrypted app database. No provider URI,
+     * plaintext temporary video or eager whole-file copy is needed, including after backup restore. */
+    suspend fun videoPreview(media: NoteMediaEntity, maxDimension: Int = 720): android.graphics.Bitmap = withContext(Dispatchers.IO) {
+        require(maxDimension in 1..1800)
+        videoSource(media).use { source ->
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(source)
+                val frame = if (android.os.Build.VERSION.SDK_INT >= 27) {
+                    retriever.getScaledFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        maxDimension, maxDimension)
+                } else retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                checkNotNull(frame) { "视频封面无法解码" }
+                val scale = minOf(1f, maxDimension.toFloat() / maxOf(frame.width, frame.height))
+                if (scale == 1f) frame else android.graphics.Bitmap.createScaledBitmap(frame,
+                    (frame.width * scale).toInt().coerceAtLeast(1),
+                    (frame.height * scale).toInt().coerceAtLeast(1), true).also { if (it !== frame) frame.recycle() }
+            } finally { retriever.release() }
+        }
+    }
+
     private class ChunkInputStream(
         private val media: NoteMediaEntity, private val dao: MediaDao,
     ) : java.io.InputStream() {
